@@ -2,12 +2,15 @@ import { useState } from "react";
 import UploadPanel from "../components/UploadPanel";
 import ViewSlot from "../components/ViewSlot";
 import ColumnIdentityPanel from "../components/ColumnIdentityPanel";
-import { extractFromBlob, extractFromFile } from "../services/api";
+import { extractFromBlob, extractFromFile, mergeViews } from "../services/api";
 
 export default function AnalysisPage({ project }) {
   const [file, setFile] = useState(null);
   const [fileType, setFileType] = useState("");
   const [error, setError] = useState("");
+  const [merged, setMerged] = useState(null);
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState("");
 
   const [viewA, setViewA] = useState({ blob: null, url: "" });
   const [viewB, setViewB] = useState({ blob: null, url: "" });
@@ -25,7 +28,32 @@ export default function AnalysisPage({ project }) {
   const [runError, setRunError] = useState("");
 
   const isPdf = fileType === "application/pdf";
-
+  const runMerge = async () => {
+    if (!extraction) {
+      setMergeError("Run extraction first.");
+      return;
+    }
+    setMerging(true);
+    setMergeError("");
+    try {
+      // Build the views payload from whatever extraction results exist
+      const views = {};
+      for (const key of ["A", "B", "C"]) {
+        if (extraction[key]?.extracted_fields) {
+          views[key] = { extracted_fields: extraction[key].extracted_fields };
+        }
+      }
+      const caseId = `${project.projectId || "P001"}-${
+        identity.columnMark || "C1"
+      }`;
+      const result = await mergeViews(caseId, views);
+      setMerged(result);
+    } catch (e) {
+      setMergeError(e.message || "Merge failed.");
+    } finally {
+      setMerging(false);
+    }
+  };
   // ---- Run extraction ----
   const runExtraction = async () => {
     setRunError("");
@@ -149,11 +177,126 @@ export default function AnalysisPage({ project }) {
         )}
       </div>
 
+      {extraction && (
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-semibold text-slate-900">Merge Views</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Combine the extracted fields from Views A, B, and C into one
+            confirmed set. Conflicts are reported, not resolved.
+          </p>
+          <div className="mt-3">
+            <button
+              onClick={runMerge}
+              disabled={merging}
+              className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
+            >
+              {merging ? "Merging..." : "Merge Views"}
+            </button>
+          </div>
+          {mergeError && (
+            <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {mergeError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {merged && <MergedResultCard merged={merged} />}
+
       {extraction && <ExtractionResults extraction={extraction} />}
     </div>
   );
 }
+function MergedResultCard({ merged }) {
+  const fields = [
+    ["Column mark", merged.column_mark],
+    ["Width (mm)", merged.width_mm],
+    ["Depth (mm)", merged.depth_mm],
+    ["Bar count", merged.bar_count],
+    ["Bar diameter (mm)", merged.bar_diameter_mm],
+    ["Tie diameter (mm)", merged.tie_diameter_mm],
+    ["Tie spacing (mm)", merged.tie_spacing_mm],
+  ];
 
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-900">
+          Merged Field Set
+        </h3>
+        <span className="rounded border border-emerald-300 bg-white px-2 py-0.5 text-xs font-medium text-emerald-800">
+          Confidence: {merged.merge_confidence}
+        </span>
+      </div>
+
+      <p className="mt-1 text-xs text-slate-600">
+        Confirmed field values, with provenance per view.
+      </p>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+        {fields.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2"
+          >
+            <span className="text-xs text-slate-500">{label}</span>
+            <span className="text-sm font-medium text-slate-800">
+              {value === null || value === undefined ? "—" : value}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {merged.zone_spacings?.length > 0 && (
+        <div className="mt-4">
+          <h4 className="text-xs font-semibold text-slate-700">
+            Zone spacings
+          </h4>
+          <div className="mt-2 space-y-1">
+            {merged.zone_spacings.map((z, i) => (
+              <div key={i} className="text-xs text-slate-600">
+                Zone <span className="font-mono">{z.zone}</span> — spacing{" "}
+                <span className="font-mono">{z.spacing_mm} mm</span>
+                {z.count ? ` (x${z.count})` : ""}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {merged.conflicts?.length > 0 && (
+        <div className="mt-4 rounded border border-red-200 bg-red-50 p-3">
+          <h4 className="text-xs font-semibold text-red-800">Conflicts</h4>
+          <ul className="mt-1 list-disc pl-5 text-xs text-red-700">
+            {merged.conflicts.map((c, i) => (
+              <li key={i}>{c.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {merged.merge_warnings?.length > 0 && (
+        <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3">
+          <h4 className="text-xs font-semibold text-amber-800">Warnings</h4>
+          <ul className="mt-1 list-disc pl-5 text-xs text-amber-700">
+            {merged.merge_warnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <details className="mt-4">
+        <summary className="cursor-pointer text-xs text-slate-500">
+          Provenance per field
+        </summary>
+        <pre className="mt-2 overflow-auto rounded border border-slate-200 bg-white p-3 text-xs">
+          {JSON.stringify(merged.field_provenance, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
 function ExtractionResults({ extraction }) {
   return (
     <div className="space-y-4">

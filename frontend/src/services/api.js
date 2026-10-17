@@ -18,6 +18,23 @@ export async function extractFromBlob(blob, filename, sourceView) {
   return res.json();
 }
 
+export async function mergeViews(caseId, views) {
+  const payload = {
+    case_id: caseId,
+    views,
+  };
+  const res = await fetch(`${BASE_URL}/api/merge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Merge error ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
 export async function extractFromFile(file, sourceView) {
   return extractFromBlob(file, file.name, sourceView);
 }
