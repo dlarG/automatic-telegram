@@ -1,4 +1,4 @@
-import fitz  # PyMuPDF
+import pymupdf  # PyMuPDF
 
 # Minimum characters per page to consider a PDF "digital" (has embedded text).
 # Scanned PDFs often extract a handful of stray characters from stamps/logos,
@@ -18,7 +18,7 @@ def extract_pdf_text(contents: bytes) -> dict:
       - pages: list of {page_number, text, char_count}
     """
     try:
-        doc = fitz.open(stream=contents, filetype="pdf")
+        doc = pymupdf.open(stream=contents, filetype="pdf")
     except Exception as e:
         return {
             "has_embedded_text": False,

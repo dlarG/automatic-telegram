@@ -1,6 +1,3 @@
-// Simulated backend response for UI development only.
-// Replace with real API response in Phase 4.
-
 export const MOCK_EXTRACTION = {
   projectId: "P007",
   sheetId: "S-10",

@@ -6,7 +6,6 @@ const MAX_MB = 25;
 export default function UploadPanel({
   file,
   setFile,
-  setPreviewUrl,
   setFileType,
   error,
   setError,
@@ -28,11 +27,6 @@ export default function UploadPanel({
 
     setFile(selected);
     setFileType(selected.type);
-    if (selected.type.startsWith("image/")) {
-      setPreviewUrl(URL.createObjectURL(selected));
-    } else {
-      setPreviewUrl("");
-    }
   };
 
   const handleDrop = (e) => {
@@ -43,7 +37,6 @@ export default function UploadPanel({
 
   const handleClear = () => {
     setFile(null);
-    setPreviewUrl("");
     setFileType("");
     setError("");
     if (inputRef.current) inputRef.current.value = "";
@@ -51,9 +44,10 @@ export default function UploadPanel({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Drawing Upload</h3>
+      <h3 className="text-sm font-semibold text-slate-900">Source Document</h3>
       <p className="mt-1 text-xs text-slate-500">
-        PDF, JPG, or PNG. Max {MAX_MB} MB. Preview is local only.
+        Upload the structural drawing set (PDF) or a single image crop
+        (JPG/PNG). Max {MAX_MB} MB.
       </p>
 
       {!file && (
