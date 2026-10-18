@@ -286,6 +286,58 @@ function MergedResultCard({ merged }) {
         </div>
       )}
 
+      {merged.rule_results?.length > 0 && (
+        <div className="mt-6 border-t border-emerald-200 pt-4">
+          <h4 className="text-sm font-semibold text-slate-900 mb-3">
+            Engineering Checks
+          </h4>
+          <div className="space-y-3">
+            {merged.rule_results.map((rule) => {
+              // Determine color based on status
+              let badgeColor = "bg-slate-100 text-slate-700 border-slate-200";
+              if (rule.status === "PRELIMINARILY_COMPLIANT")
+                badgeColor = "bg-green-100 text-green-800 border-green-300";
+              if (rule.status === "PRELIMINARILY_NONCOMPLIANT")
+                badgeColor = "bg-red-100 text-red-800 border-red-300";
+              if (rule.status === "INSUFFICIENT_DOCUMENT_COVERAGE")
+                badgeColor = "bg-amber-100 text-amber-800 border-amber-300";
+
+              return (
+                <div
+                  key={rule.rule_id}
+                  className="rounded border border-slate-200 bg-white p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-800">
+                        {rule.rule_id}: {rule.label}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600">
+                        {rule.message}
+                      </p>
+                    </div>
+                    <span
+                      className={`whitespace-nowrap rounded border px-2 py-0.5 text-xs font-medium ${badgeColor}`}
+                    >
+                      {rule.status.replace(/_/g, " ")}
+                    </span>
+                  </div>
+
+                  {/* If we have calculation details, show them */}
+                  {rule.details?.ratio_percent !== undefined && (
+                    <div className="mt-2 rounded bg-slate-50 p-2 text-xs text-slate-600 font-mono">
+                      A_g = {rule.details.gross_area_mm2} mm² | A_st ={" "}
+                      {rule.details.steel_area_mm2} mm² | Ratio ={" "}
+                      {rule.details.ratio_percent}%
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <details className="mt-4">
         <summary className="cursor-pointer text-xs text-slate-500">
           Provenance per field

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from app.services.rule_engine import run_all_rules
 
 from app.services.view_merger import merge_view_results
 
@@ -18,17 +19,19 @@ class MergeRequest(BaseModel):
 
 @router.post("/merge")
 async def merge_views(payload: MergeRequest):
-    """
-    Merge the extracted fields from Views A, B, and C into one confirmed set.
-    Conflicting evidence is reported, not resolved silently.
-    """
     if not payload.views:
         raise HTTPException(status_code=400, detail="No views supplied.")
 
-    # Flatten pydantic objects to dict for the merger
     flat = {
         key: {"extracted_fields": v.extracted_fields or {}}
         for key, v in payload.views.items()
     }
 
-    return merge_view_results(payload.case_id, flat)
+    # 1. Merge the fields
+    merged_result = merge_view_results(payload.case_id, flat)
+    
+    # 2. Run the rule engine on the merged fields
+    rule_results = run_all_rules(merged_result)
+    merged_result["rule_results"] = rule_results
+
+    return merged_result
