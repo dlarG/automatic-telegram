@@ -21,14 +21,14 @@ RE_BARS_DASHED = re.compile(
     re.IGNORECASE,
 )
 RE_BARS_WITH_MM = re.compile(
-    r"\b(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(?:mm)?\s*(?:ø|Ø|∅|φ|phi)\b",
-    re.IGNORECASE,
+    r"\b(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(?:mm)\b", 
+    re.IGNORECASE
 )
 RE_BARS_HASH = re.compile(r"\b(\d{1,3})\s*[-–]\s*#\s*(\d{1,3})\b")
 
 # Tie / hoop callout: "12mm Ø Ties", "10mm ties @ 100mm", "10@100", "12mmØ Ties"
 RE_TIE_DIAMETER = re.compile(
-    r"\b(\d{1,3})\s*(?:mm)?\s*(?:ø|Ø|∅|φ|phi)\s*(?:ties|hoops|stirrups|links)\b",
+    r"(?:ø|Ø|∅|φ|phi)?\s*\b(\d{1,3})\s*(?:mm)?\b",
     re.IGNORECASE,
 )
 RE_TIE_SPACING_AT = re.compile(
@@ -127,33 +127,23 @@ def extract_dimensions(text: str) -> dict:
 
 
 def extract_longitudinal_bars(text: str) -> dict:
-    """
-    Return {'bar_count': int, 'bar_diameter_mm': int} or {} if not found.
-    Only returns values when the callout is followed by 'vertical' or 'mmØ'
-    or is in the 'N-MM' format.
-    """
     text_clean = _normalize_whitespace(text)
 
-    # Prefer the format "8 - 16mmØ Vertical Bars" or "4 - 16mmØ"
-    m = RE_BARS_WITH_MM.search(text_clean)
+    # 1. Narrow down to the MAIN BAR section if it exists
+    main_bar_section = text_clean
+    if "MAIN BAR" in text_clean.upper():
+        main_bar_section = text_clean.upper().split("MAIN BAR")[1]
+
+    # 2. Match "6-φ16mm", "6-Ø16mm", or "6 - 16mm"
+    # Notice we added 'φ' to the symbol list (?:ø|Ø|∅|φ|phi)
+    m = re.search(r"(\d{1,3})\s*[-–]\s*(?:ø|Ø|∅|φ|phi)?\s*(\d{1,3})\s*mm", main_bar_section, re.IGNORECASE)
     if m:
         count, diameter = int(m.group(1)), int(m.group(2))
         if 2 <= count <= 50 and 6 <= diameter <= 40:
             return {"bar_count": count, "bar_diameter_mm": diameter}
 
-    # Fallback: "12-20MM VERTICAL BARS"
-    m = RE_BARS_DASHED.search(text_clean)
-    if m:
-        count, diameter = int(m.group(1)), int(m.group(2))
-        if 2 <= count <= 50 and 6 <= diameter <= 40:
-            # Require nearby "vertical" or "mm" keyword
-            tail = text_clean[m.end(): m.end() + 30].lower()
-            head = text_clean[max(0, m.start() - 20): m.start()].lower()
-            if "vertical" in tail or "main" in tail or "bar" in tail or "mm" in head:
-                return {"bar_count": count, "bar_diameter_mm": diameter}
-
-    # "#" style: "8-#16"
-    m = RE_BARS_HASH.search(text_clean)
+    # Fallback for "8 - 16mmØ Vertical Bars" (Residence format)
+    m = re.search(r"(\d{1,3})\s*[-–]\s*(\d{1,3})\s*mm\s*(?:ø|Ø|∅|φ|phi)", main_bar_section, re.IGNORECASE)
     if m:
         count, diameter = int(m.group(1)), int(m.group(2))
         if 2 <= count <= 50 and 6 <= diameter <= 40:
@@ -163,37 +153,31 @@ def extract_longitudinal_bars(text: str) -> dict:
 
 
 def extract_tie_info(text: str) -> dict:
-    """
-    Return {'tie_diameter_mm': int, 'tie_spacing_mm': int or None} or {}.
-    Prefers direct diameter + spacing. Returns None spacing if only diameter
-    is present (e.g., 'see Column Detail').
-    """
     text_clean = _normalize_whitespace(text)
     out = {}
 
-    # Diameter: "12mm Ø Ties" or "10mm ties"
-    m = RE_TIE_DIAMETER.search(text_clean)
+    # 1. Narrow down to the TIES section if it exists
+    tie_section = text_clean
+    if "TIES" in text_clean.upper():
+        tie_section = text_clean.upper().split("TIES")[1]
+    elif "TIE" in text_clean.upper():
+        tie_section = text_clean.upper().split("TIE")[1]
+
+    # 2. Match "φ10 mm", "Ø10mm", "10mm"
+    # Notice we added 'φ' here as well
+    m = re.search(r"(?:ø|Ø|∅|φ|phi)?\s*(\d{1,3})\s*mm", tie_section, re.IGNORECASE)
     if m:
         diameter = int(m.group(1))
         if 6 <= diameter <= 25:
             out["tie_diameter_mm"] = diameter
 
-    # Spacing in "10 @ 100" format
-    m = RE_TIE_SPACING_AT.search(text_clean)
+    # 3. Spacing: "@100mm", "@ 75", "SPACED 100mm"
+    m = re.search(r"@\s*(\d{2,4})", text_clean, re.IGNORECASE)
     if m:
-        spacing = int(m.group(2))
+        spacing = int(m.group(1))
         if 25 <= spacing <= 600:
             out["tie_spacing_mm"] = spacing
 
-    # Spacing in "spacing at 100mm" format
-    if "tie_spacing_mm" not in out:
-        m = RE_TIE_SPACING_TEXT.search(text_clean)
-        if m:
-            spacing = int(m.group(1))
-            if 25 <= spacing <= 600:
-                out["tie_spacing_mm"] = spacing
-
-    # If diameter was found but no spacing, still return with None spacing
     if "tie_diameter_mm" in out and "tie_spacing_mm" not in out:
         out["tie_spacing_mm"] = None
         out["tie_spacing_note"] = "spacing not explicit; may require Column Detail"
