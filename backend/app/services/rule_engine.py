@@ -63,13 +63,56 @@ def check_rebar_ratio(merged_fields: dict) -> dict:
         }
     }
 
+def check_tie_diameter(merged_fields: dict) -> dict:
+    """
+    Check if tie diameter meets the NSCP minimum (10mm).
+    NSCP 2015 Section 425.7.2.2
+    """
+    rule_id = "TIE-DIA-01"
+    label = "Minimum Tie Bar Diameter (NSCP 425.7.2.2)"
+    
+    tie_dia = merged_fields.get("tie_diameter_mm")
+    main_bar_dia = merged_fields.get("bar_diameter_mm")
+
+    if tie_dia is None or main_bar_dia is None:
+        return {
+            "rule_id": rule_id,
+            "label": label,
+            "status": "INSUFFICIENT_DOCUMENT_COVERAGE",
+            "message": "Missing tie or main bar diameter to evaluate.",
+            "details": {}
+        }
+
+    # NSCP 425.7.2.2: Minimum tie diameter is 10mm for bars 32mm or smaller
+    min_required = 10 if main_bar_dia <= 32 else 12
+
+    if tie_dia >= min_required:
+        status = "PRELIMINARILY_COMPLIANT"
+        message = f"Tie diameter ({tie_dia}mm) meets the minimum {min_required}mm requirement."
+    else:
+        status = "PRELIMINARILY_NONCOMPLIANT"
+        message = f"Tie diameter ({tie_dia}mm) is BELOW the {min_required}mm minimum."
+
+    return {
+        "rule_id": rule_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": {
+            "tie_diameter_mm": tie_dia,
+            "main_bar_diameter_mm": main_bar_dia,
+            "min_required_mm": min_required
+        }
+    }
+
+
 def run_all_rules(merged_fields: dict) -> list:
     """Run all validated rules and return a list of results."""
     results = []
     
     # Rule 1: Rebar Ratio
     results.append(check_rebar_ratio(merged_fields))
-    
+    results.append(check_tie_diameter(merged_fields))
     # Future rules will be added here once validated by collaborators
     
     return results
