@@ -55,17 +55,25 @@ export default function PdfViewer({
     };
   }, [pdfFile, pageNumber]);
 
+  // No padding or border around the canvas: the selection overlay in
+  // ViewSlot is measured against this element, so the canvas must be flush
+  // with it for the crop to line up with what the user drew.
   return (
-    <div className="rounded border border-slate-200 bg-white p-3">
-      {loading && <p className="text-xs text-slate-500">Rendering page...</p>}
+    <div>
+      {loading && (
+        <p className="px-6 py-10 text-sm text-slate-500">Rendering page...</p>
+      )}
       {error && (
-        <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+        <p
+          role="alert"
+          className="border-l-2 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
           {error}
         </p>
       )}
       <canvas
         ref={canvasRef}
-        className="block max-w-full"
+        className="block max-w-full bg-white"
         style={{ display: loading ? "none" : "block" }}
       />
     </div>

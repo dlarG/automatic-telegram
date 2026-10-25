@@ -2,6 +2,7 @@ import { useState } from "react";
 import UploadPanel from "../components/UploadPanel";
 import ViewSlot from "../components/ViewSlot";
 import ColumnIdentityPanel from "../components/ColumnIdentityPanel";
+import StepHeader from "../components/StepHeader";
 import { extractFromBlob, extractFromFile, mergeViews } from "../services/api";
 
 export default function AnalysisPage({ project }) {
@@ -28,6 +29,7 @@ export default function AnalysisPage({ project }) {
   const [runError, setRunError] = useState("");
 
   const isPdf = fileType === "application/pdf";
+
   const runMerge = async () => {
     if (!extraction) {
       setMergeError("Run extraction first.");
@@ -54,6 +56,7 @@ export default function AnalysisPage({ project }) {
       setMerging(false);
     }
   };
+
   // ---- Run extraction ----
   const runExtraction = async () => {
     setRunError("");
@@ -97,108 +100,97 @@ export default function AnalysisPage({ project }) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-6xl space-y-10">
       {project.projectId && (
-        <div className="rounded border border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
-          Project:{" "}
-          <span className="font-mono text-slate-800">{project.projectId}</span>
-          {project.title ? ` — ${project.title}` : ""}
-          {project.sheetId ? ` · Sheet ${project.sheetId}` : ""}
-        </div>
-      )}
-
-      <UploadPanel
-        file={file}
-        setFile={setFile}
-        fileType={fileType}
-        setFileType={setFileType}
-        error={error}
-        setError={setError}
-      />
-
-      <ColumnIdentityPanel identity={identity} setIdentity={setIdentity} />
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <ViewSlot
-          label="A"
-          description="Locator / context"
-          required
-          pdfFile={isPdf ? file : null}
-          capturedImage={viewA.url}
-          onCapture={(blob, url) => setViewA({ blob, url })}
-          onClear={() => setViewA({ blob: null, url: "" })}
-        />
-        <ViewSlot
-          label="B"
-          description="Column schedule cell"
-          required
-          pdfFile={isPdf ? file : null}
-          capturedImage={viewB.url}
-          onCapture={(blob, url) => setViewB({ blob, url })}
-          onClear={() => setViewB({ blob: null, url: "" })}
-        />
-        <ViewSlot
-          label="C"
-          description="Supporting detail / note"
-          required={false}
-          pdfFile={isPdf ? file : null}
-          capturedImage={viewC.url}
-          onCapture={(blob, url) => setViewC({ blob, url })}
-          onClear={() => setViewC({ blob: null, url: "" })}
-        />
-      </div>
-
-      <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="text-sm font-semibold text-slate-900">Run Extraction</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Send the captured views to the backend for text extraction and field
-          parsing.
-        </p>
-
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={runExtraction}
-            disabled={running || !file}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:bg-slate-300"
-          >
-            {running ? "Running..." : "Run Extraction"}
-          </button>
-          {file && !isPdf && (
-            <span className="text-xs text-slate-500">
-              (Image mode: View B will use the uploaded image.)
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-l-4 border-slate-800 bg-white px-4 py-2.5">
+          <span className="text-sm font-semibold text-slate-900">
+            {project.projectId}
+          </span>
+          {project.title && (
+            <span className="text-sm text-slate-700">{project.title}</span>
+          )}
+          {project.sheetId && (
+            <span className="text-sm text-slate-500">
+              Sheet {project.sheetId}
             </span>
           )}
         </div>
+      )}
 
-        {runError && (
-          <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-            {runError}
-          </p>
-        )}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <UploadPanel
+          file={file}
+          setFile={setFile}
+          fileType={fileType}
+          setFileType={setFileType}
+          error={error}
+          setError={setError}
+        />
+        <ColumnIdentityPanel identity={identity} setIdentity={setIdentity} />
       </div>
 
-      {extraction && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="text-sm font-semibold text-slate-900">Merge Views</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            Combine the extracted fields from Views A, B, and C into one
-            confirmed set. Conflicts are reported, not resolved.
-          </p>
-          <div className="mt-3">
-            <button
-              onClick={runMerge}
-              disabled={merging}
-              className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
-            >
-              {merging ? "Merging..." : "Merge Views"}
-            </button>
-          </div>
-          {mergeError && (
-            <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {mergeError}
-            </p>
-          )}
+      <section>
+        <StepHeader
+          step={3}
+          title="Capture the views"
+          hint="Draw a box around each region on the sheet. Views A and B are required; C is optional."
+        />
+        <div className="mt-4 space-y-6">
+          <ViewSlot
+            label="A"
+            description="Locator / context"
+            required
+            pdfFile={isPdf ? file : null}
+            capturedImage={viewA.url}
+            onCapture={(blob, url) => setViewA({ blob, url })}
+            onClear={() => setViewA({ blob: null, url: "" })}
+          />
+          <ViewSlot
+            label="B"
+            description="Column schedule cell"
+            required
+            pdfFile={isPdf ? file : null}
+            capturedImage={viewB.url}
+            onCapture={(blob, url) => setViewB({ blob, url })}
+            onClear={() => setViewB({ blob: null, url: "" })}
+          />
+          <ViewSlot
+            label="C"
+            description="Supporting detail / note"
+            required={false}
+            pdfFile={isPdf ? file : null}
+            capturedImage={viewC.url}
+            onCapture={(blob, url) => setViewC({ blob, url })}
+            onClear={() => setViewC({ blob: null, url: "" })}
+          />
         </div>
+      </section>
+
+      <ActionStep
+        step={4}
+        title="Run extraction"
+        hint="Send the captured views to the backend to read the text and parse the fields."
+        button={running ? "Running..." : "Run extraction"}
+        onClick={runExtraction}
+        disabled={running || !file}
+        note={
+          file && !isPdf
+            ? "Image mode: View B will use the uploaded image."
+            : null
+        }
+        error={runError}
+      />
+
+      {extraction && (
+        <ActionStep
+          step={5}
+          title="Merge views"
+          hint="Combine the extracted fields from Views A, B and C into one set. Conflicts are reported, not resolved."
+          button={merging ? "Merging..." : "Merge views"}
+          onClick={runMerge}
+          disabled={merging}
+          error={mergeError}
+        />
       )}
 
       {merged && <MergedResultCard merged={merged} />}
@@ -207,6 +199,75 @@ export default function AnalysisPage({ project }) {
     </div>
   );
 }
+
+function ActionStep({
+  step,
+  title,
+  hint,
+  button,
+  onClick,
+  disabled,
+  note,
+  error,
+}) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <StepHeader step={step} title={title} hint={hint} />
+        <div className="flex flex-none items-center gap-3 sm:pl-6">
+          {note && <span className="text-xs text-slate-500">{note}</span>}
+          <button
+            onClick={onClick}
+            disabled={disabled}
+            className="rounded bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2 disabled:bg-slate-300 disabled:text-slate-500"
+          >
+            {button}
+          </button>
+        </div>
+      </div>
+      {error && (
+        <p
+          role="alert"
+          className="mt-4 border-l-2 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* Shared "title block" grid used by both result cards */
+function FieldGrid({ fields }) {
+  return (
+    <div className="border-2 border-slate-800 bg-slate-300">
+      <div className="grid grid-cols-2 gap-px md:grid-cols-4">
+        {fields.map(([label, value]) => {
+          const empty = value === null || value === undefined || value === "";
+          return (
+            <div key={label} className="bg-white px-3 py-2.5">
+              <p className="text-xs text-slate-500">{label}</p>
+              <p
+                className={`mt-0.5 text-base font-semibold ${
+                  empty ? "text-slate-300" : "text-slate-900"
+                }`}
+              >
+                {empty ? "—" : value}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const STATUS_STYLES = {
+  PRELIMINARILY_COMPLIANT: "border-green-600 bg-green-50 text-green-900",
+  PRELIMINARILY_NONCOMPLIANT: "border-red-600 bg-red-50 text-red-900",
+  INSUFFICIENT_DOCUMENT_COVERAGE: "border-amber-500 bg-amber-50 text-amber-900",
+};
+
 function MergedResultCard({ merged }) {
   const fields = [
     ["Column mark", merged.column_mark],
@@ -219,55 +280,50 @@ function MergedResultCard({ merged }) {
   ];
 
   return (
-    <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-slate-900">
-          Merged Field Set
-        </h3>
-        <span className="rounded border border-emerald-300 bg-white px-2 py-0.5 text-xs font-medium text-emerald-800">
+    <section className="rounded-md border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">
+            Merged field set
+          </h3>
+          <p className="mt-0.5 text-sm text-slate-600">
+            Confirmed values, with the source view recorded for each field.
+          </p>
+        </div>
+        <span className="rounded-sm border border-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-900">
           Confidence: {merged.merge_confidence}
         </span>
       </div>
 
-      <p className="mt-1 text-xs text-slate-600">
-        Confirmed field values, with provenance per view.
-      </p>
-
-      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-        {fields.map(([label, value]) => (
-          <div
-            key={label}
-            className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2"
-          >
-            <span className="text-xs text-slate-500">{label}</span>
-            <span className="text-sm font-medium text-slate-800">
-              {value === null || value === undefined ? "—" : value}
-            </span>
-          </div>
-        ))}
+      <div className="mt-4">
+        <FieldGrid fields={fields} />
       </div>
 
       {merged.zone_spacings?.length > 0 && (
-        <div className="mt-4">
-          <h4 className="text-xs font-semibold text-slate-700">
+        <div className="mt-5">
+          <h4 className="text-sm font-semibold text-slate-900">
             Zone spacings
           </h4>
-          <div className="mt-2 space-y-1">
+          <ul className="mt-2 divide-y divide-slate-100 border-y border-slate-100">
             {merged.zone_spacings.map((z, i) => (
-              <div key={i} className="text-xs text-slate-600">
-                Zone <span className="font-mono">{z.zone}</span> — spacing{" "}
-                <span className="font-mono">{z.spacing_mm} mm</span>
-                {z.count ? ` (x${z.count})` : ""}
-              </div>
+              <li
+                key={i}
+                className="flex items-center justify-between py-2 text-sm text-slate-700"
+              >
+                <span>Zone {z.zone}</span>
+                <span className="font-medium text-slate-900">
+                  {z.spacing_mm} mm{z.count ? ` (x${z.count})` : ""}
+                </span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
 
       {merged.conflicts?.length > 0 && (
-        <div className="mt-4 rounded border border-red-200 bg-red-50 p-3">
-          <h4 className="text-xs font-semibold text-red-800">Conflicts</h4>
-          <ul className="mt-1 list-disc pl-5 text-xs text-red-700">
+        <div className="mt-5 border-l-2 border-red-600 bg-red-50 px-4 py-3">
+          <h4 className="text-sm font-semibold text-red-900">Conflicts</h4>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-red-800">
             {merged.conflicts.map((c, i) => (
               <li key={i}>{c.message}</li>
             ))}
@@ -276,9 +332,9 @@ function MergedResultCard({ merged }) {
       )}
 
       {merged.merge_warnings?.length > 0 && (
-        <div className="mt-4 rounded border border-amber-200 bg-amber-50 p-3">
-          <h4 className="text-xs font-semibold text-amber-800">Warnings</h4>
-          <ul className="mt-1 list-disc pl-5 text-xs text-amber-700">
+        <div className="mt-5 border-l-2 border-amber-500 bg-amber-50 px-4 py-3">
+          <h4 className="text-sm font-semibold text-amber-900">Warnings</h4>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800">
             {merged.merge_warnings.map((w, i) => (
               <li key={i}>{w}</li>
             ))}
@@ -287,124 +343,125 @@ function MergedResultCard({ merged }) {
       )}
 
       {merged.rule_results?.length > 0 && (
-        <div className="mt-6 border-t border-emerald-200 pt-4">
-          <h4 className="text-sm font-semibold text-slate-900 mb-3">
-            Engineering Checks
+        <div className="mt-8 border-t border-slate-200 pt-6">
+          <h4 className="text-base font-semibold text-slate-900">
+            Engineering checks
           </h4>
-          <div className="space-y-3">
-            {merged.rule_results.map((rule) => {
-              // Determine color based on status
-              let badgeColor = "bg-slate-100 text-slate-700 border-slate-200";
-              if (rule.status === "PRELIMINARILY_COMPLIANT")
-                badgeColor = "bg-green-100 text-green-800 border-green-300";
-              if (rule.status === "PRELIMINARILY_NONCOMPLIANT")
-                badgeColor = "bg-red-100 text-red-800 border-red-300";
-              if (rule.status === "INSUFFICIENT_DOCUMENT_COVERAGE")
-                badgeColor = "bg-amber-100 text-amber-800 border-amber-300";
-
-              return (
-                <div
-                  key={rule.rule_id}
-                  className="rounded border border-slate-200 bg-white p-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold text-slate-800">
-                        {rule.rule_id}: {rule.label}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-600">
-                        {rule.message}
-                      </p>
-                    </div>
-                    <span
-                      className={`whitespace-nowrap rounded border px-2 py-0.5 text-xs font-medium ${badgeColor}`}
-                    >
-                      {rule.status.replace(/_/g, " ")}
-                    </span>
+          <div className="mt-4 space-y-3">
+            {merged.rule_results.map((rule) => (
+              <div
+                key={rule.rule_id}
+                className="rounded-sm border border-slate-200 p-4"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {rule.rule_id}: {rule.label}
+                    </p>
+                    <p className="mt-1 text-sm leading-snug text-slate-600">
+                      {rule.message}
+                    </p>
                   </div>
-
-                  {/* If we have calculation details, show them */}
-                  {rule.details?.ratio_percent !== undefined && (
-                    <div className="mt-2 rounded bg-slate-50 p-2 text-xs text-slate-600 font-mono">
-                      A_g = {rule.details.gross_area_mm2} mm² | A_st ={" "}
-                      {rule.details.steel_area_mm2} mm² | Ratio ={" "}
-                      {rule.details.ratio_percent}%
-                    </div>
-                  )}
+                  <span
+                    className={`flex-none self-start whitespace-nowrap rounded-sm border-l-4 px-2.5 py-1 text-xs font-semibold ${
+                      STATUS_STYLES[rule.status] ||
+                      "border-slate-400 bg-slate-100 text-slate-800"
+                    }`}
+                  >
+                    {rule.status.replace(/_/g, " ")}
+                  </span>
                 </div>
-              );
-            })}
+
+                {rule.details?.ratio_percent !== undefined && (
+                  <div className="mt-3 grid grid-cols-3 gap-px border border-slate-300 bg-slate-300 text-center">
+                    <Calc
+                      label="Gross area A_g"
+                      value={`${rule.details.gross_area_mm2} mm²`}
+                    />
+                    <Calc
+                      label="Steel area A_st"
+                      value={`${rule.details.steel_area_mm2} mm²`}
+                    />
+                    <Calc
+                      label="Ratio"
+                      value={`${rule.details.ratio_percent}%`}
+                    />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      <details className="mt-4">
-        <summary className="cursor-pointer text-xs text-slate-500">
+      <details className="mt-6">
+        <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-900">
           Provenance per field
         </summary>
-        <pre className="mt-2 overflow-auto rounded border border-slate-200 bg-white p-3 text-xs">
+        <pre className="mt-2 max-h-72 overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
           {JSON.stringify(merged.field_provenance, null, 2)}
         </pre>
       </details>
+    </section>
+  );
+}
+
+function Calc({ label, value }) {
+  return (
+    <div className="bg-slate-50 px-2 py-2">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-sm font-semibold text-slate-900">{value}</p>
     </div>
   );
 }
+
 function ExtractionResults({ extraction }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       {Object.entries(extraction).map(([key, data]) => (
-        <div
+        <section
           key={key}
-          className="rounded-lg border border-slate-200 bg-white p-4"
+          className="rounded-md border border-slate-200 bg-white p-5"
         >
-          <h3 className="text-sm font-semibold text-slate-900">
-            View {key} — Extraction
-          </h3>
+          <div className="flex items-start gap-3">
+            <span
+              aria-hidden="true"
+              className="flex h-7 w-7 flex-none items-center justify-center rounded-sm bg-slate-900 text-sm font-semibold text-white"
+            >
+              {key}
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold text-slate-900">
+                View {key} extraction
+              </h3>
+              <p className="mt-0.5 text-sm text-slate-600">
+                Mode: {data.extraction?.mode}
+                {data.extraction?.message
+                  ? ` · ${data.extraction.message}`
+                  : ""}
+              </p>
+            </div>
+          </div>
 
-          <p className="mt-1 text-xs text-slate-500">
-            Mode: <span className="font-mono">{data.extraction?.mode}</span> ·{" "}
-            {data.extraction?.message}
-          </p>
-
-          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-            <FieldRow
-              label="Column mark"
-              value={data.extracted_fields?.column_mark}
-            />
-            <FieldRow
-              label="Width (mm)"
-              value={data.extracted_fields?.width_mm}
-            />
-            <FieldRow
-              label="Depth (mm)"
-              value={data.extracted_fields?.depth_mm}
-            />
-            <FieldRow
-              label="Bar count"
-              value={data.extracted_fields?.bar_count}
-            />
-            <FieldRow
-              label="Bar diameter (mm)"
-              value={data.extracted_fields?.bar_diameter_mm}
-            />
-            <FieldRow
-              label="Tie diameter (mm)"
-              value={data.extracted_fields?.tie_diameter_mm}
-            />
-            <FieldRow
-              label="Tie spacing (mm)"
-              value={data.extracted_fields?.tie_spacing_mm}
-            />
-            <FieldRow
-              label="Parse confidence"
-              value={data.extracted_fields?.parse_confidence}
+          <div className="mt-4">
+            <FieldGrid
+              fields={[
+                ["Column mark", data.extracted_fields?.column_mark],
+                ["Width (mm)", data.extracted_fields?.width_mm],
+                ["Depth (mm)", data.extracted_fields?.depth_mm],
+                ["Bar count", data.extracted_fields?.bar_count],
+                ["Bar diameter (mm)", data.extracted_fields?.bar_diameter_mm],
+                ["Tie diameter (mm)", data.extracted_fields?.tie_diameter_mm],
+                ["Tie spacing (mm)", data.extracted_fields?.tie_spacing_mm],
+                ["Parse confidence", data.extracted_fields?.parse_confidence],
+              ]}
             />
           </div>
 
           {data.extracted_fields?.parse_warnings?.length > 0 && (
-            <div className="mt-3 rounded border border-amber-200 bg-amber-50 p-3">
-              <p className="text-xs font-medium text-amber-800">Warnings</p>
-              <ul className="mt-1 list-disc pl-5 text-xs text-amber-700">
+            <div className="mt-4 border-l-2 border-amber-500 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-semibold text-amber-900">Warnings</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800">
                 {data.extracted_fields.parse_warnings.map((w, i) => (
                   <li key={i}>{w}</li>
                 ))}
@@ -412,27 +469,16 @@ function ExtractionResults({ extraction }) {
             </div>
           )}
 
-          <details className="mt-3">
-            <summary className="cursor-pointer text-xs text-slate-500">
-              Show raw text ({data.raw_text?.length || 0} chars)
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-900">
+              Show raw text ({data.raw_text?.length || 0} characters)
             </summary>
-            <pre className="mt-2 max-h-64 overflow-auto rounded border border-slate-200 bg-slate-50 p-3 text-xs">
+            <pre className="mt-2 max-h-64 overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
               {data.raw_text?.slice(0, 2000) || "(empty)"}
             </pre>
           </details>
-        </div>
+        </section>
       ))}
-    </div>
-  );
-}
-
-function FieldRow({ label, value }) {
-  const display =
-    value === null || value === undefined || value === "" ? "—" : value;
-  return (
-    <div className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 px-3 py-2">
-      <span className="text-xs text-slate-500">{label}</span>
-      <span className="text-sm font-medium text-slate-800">{display}</span>
     </div>
   );
 }

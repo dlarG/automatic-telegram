@@ -135,15 +135,14 @@ def extract_longitudinal_bars(text: str) -> dict:
         main_bar_section = text_clean.upper().split("MAIN BAR")[1]
 
     # 2. Match "6-φ16mm", "6-Ø16mm", or "6 - 16mm"
-    # Notice we added 'φ' to the symbol list (?:ø|Ø|∅|φ|phi)
-    m = re.search(r"(\d{1,3})\s*[-–]\s*(?:ø|Ø|∅|φ|phi)?\s*(\d{1,3})\s*mm", main_bar_section, re.IGNORECASE)
+    m = re.search(r"(\d{1,3})\s*[-–]\s*(?:ø|Ø|∅|φ|phi|o|O|0|Q)?\s*(\d{1,3})\s*(?:mm|MM)", main_bar_section, re.IGNORECASE)
     if m:
         count, diameter = int(m.group(1)), int(m.group(2))
         if 2 <= count <= 50 and 6 <= diameter <= 40:
             return {"bar_count": count, "bar_diameter_mm": diameter}
 
-    # Fallback for "8 - 16mmØ Vertical Bars" (Residence format)
-    m = re.search(r"(\d{1,3})\s*[-–]\s*(\d{1,3})\s*mm\s*(?:ø|Ø|∅|φ|phi)", main_bar_section, re.IGNORECASE)
+    # 3. Match "4-16MMO" or "4-16MM0" (The DepEd/OCR issue)
+    m = re.search(r"(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(?:mm|MM)\s*[oO0QØø∅φ]?", main_bar_section, re.IGNORECASE)
     if m:
         count, diameter = int(m.group(1)), int(m.group(2))
         if 2 <= count <= 50 and 6 <= diameter <= 40:
@@ -155,23 +154,38 @@ def extract_longitudinal_bars(text: str) -> dict:
 def extract_tie_info(text: str) -> dict:
     text_clean = _normalize_whitespace(text)
     out = {}
+    tie_diameter = None
 
-    # 1. Narrow down to the TIES section if it exists
-    tie_section = text_clean
-    if "TIES" in text_clean.upper():
-        tie_section = text_clean.upper().split("TIES")[1]
-    elif "TIE" in text_clean.upper():
-        tie_section = text_clean.upper().split("TIE")[1]
+    # 1. Find the word TIES or TIE
+    tie_match = re.search(r"(?:TIES|TIE)\b", text_clean, re.IGNORECASE)
+    
+    if tie_match:
+        # Check text AFTER "TIES" (e.g., "TIES: ∅10mm" or "TIES SP @ 2-50")
+        tie_after = text_clean[tie_match.end():]
+        
+        # Look for "10MMO", "10mm", "10"
+        m = re.search(r"(\d{1,3})\s*(?:mm|MM)\s*[oO0QØø∅φ]?", tie_after, re.IGNORECASE)
+        if not m:
+            m = re.search(r"(\d{1,3})", tie_after)
+            
+        if m:
+            num = int(m.group(1))
+            if 6 <= num <= 25:
+                tie_diameter = num
+                
+    # 2. Fallback: Check BEFORE "TIES" (e.g., "12mm ∅ Ties")
+    if tie_diameter is None and tie_match:
+        tie_before = text_clean[:tie_match.start()]
+        matches = list(re.finditer(r"(\d{1,3})\s*(?:mm|MM)\s*[oO0QØø∅φ]?", tie_before, re.IGNORECASE))
+        if matches:
+            num = int(matches[-1].group(1)) # Get the closest one
+            if 6 <= num <= 25:
+                tie_diameter = num
 
-    # 2. Match "φ10 mm", "Ø10mm", "10mm"
-    # Notice we added 'φ' here as well
-    m = re.search(r"(?:ø|Ø|∅|φ|phi)?\s*(\d{1,3})\s*mm", tie_section, re.IGNORECASE)
-    if m:
-        diameter = int(m.group(1))
-        if 6 <= diameter <= 25:
-            out["tie_diameter_mm"] = diameter
+    if tie_diameter:
+        out["tie_diameter_mm"] = tie_diameter
 
-    # 3. Spacing: "@100mm", "@ 75", "SPACED 100mm"
+    # 3. Spacing
     m = re.search(r"@\s*(\d{2,4})", text_clean, re.IGNORECASE)
     if m:
         spacing = int(m.group(1))
@@ -183,7 +197,6 @@ def extract_tie_info(text: str) -> dict:
         out["tie_spacing_note"] = "spacing not explicit; may require Column Detail"
 
     return out
-
 
 def extract_zone_spacing(text: str) -> list:
     """

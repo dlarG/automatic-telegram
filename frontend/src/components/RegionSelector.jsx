@@ -42,6 +42,7 @@ export default function RegionSelector({ imageUrl, region, setRegion }) {
     <div
       ref={containerRef}
       className="relative inline-block select-none"
+      style={{ cursor: "crosshair" }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -50,12 +51,12 @@ export default function RegionSelector({ imageUrl, region, setRegion }) {
       <img
         src={imageUrl}
         alt="Drawing preview"
-        className="block max-w-full"
+        className="block max-w-full bg-white"
         draggable={false}
       />
       {region && region.w > 2 && region.h > 2 && (
         <div
-          className="pointer-events-none absolute border-2 border-blue-500 bg-blue-500/10"
+          className="pointer-events-none absolute border-2 border-blue-600 bg-blue-600/10"
           style={{
             left: region.x,
             top: region.y,

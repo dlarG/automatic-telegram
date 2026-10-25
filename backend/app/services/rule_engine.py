@@ -105,6 +105,48 @@ def check_tie_diameter(merged_fields: dict) -> dict:
         }
     }
 
+def check_min_longitudinal_bars(merged_fields: dict) -> dict:
+    """
+    Check if the number of longitudinal bars meets the NSCP minimum of 4.
+    NSCP 2015 Section 410.7.3.1 (b): Four bars within rectangular or circular ties.
+    """
+    rule_id = "C2-MIN-BARS"
+    label = "Minimum Number of Longitudinal Bars (NSCP 410.7.3.1)"
+    
+    bar_count = merged_fields.get("bar_count")
+
+    # 1. Verify we have the input
+    if bar_count is None:
+        return {
+            "rule_id": rule_id,
+            "label": label,
+            "status": "INSUFFICIENT_DOCUMENT_COVERAGE",
+            "message": "Missing bar count to evaluate minimum requirement.",
+            "details": {}
+        }
+
+    # 2. The NSCP rule for tied columns
+    min_required = 4
+
+    # 3. Evaluate
+    if bar_count >= min_required:
+        status = "PRELIMINARILY_COMPLIANT"
+        message = f"Bar count ({bar_count}) meets the NSCP minimum of {min_required} bars for tied columns."
+    else:
+        status = "PRELIMINARILY_NONCOMPLIANT"
+        message = f"Bar count ({bar_count}) is BELOW the NSCP minimum of {min_required} bars for tied columns."
+
+    return {
+        "rule_id": rule_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": {
+            "bar_count": bar_count,
+            "min_required": min_required
+        }
+    }
+
 
 def run_all_rules(merged_fields: dict) -> list:
     """Run all validated rules and return a list of results."""
@@ -112,6 +154,11 @@ def run_all_rules(merged_fields: dict) -> list:
     
     # Rule 1: Rebar Ratio
     results.append(check_rebar_ratio(merged_fields))
+
+    # Rule 2: Minimum Longitudinal Bars
+    results.append(check_min_longitudinal_bars(merged_fields))
+
+    # Rule 3: Tie Diameter
     results.append(check_tie_diameter(merged_fields))
     # Future rules will be added here once validated by collaborators
     
