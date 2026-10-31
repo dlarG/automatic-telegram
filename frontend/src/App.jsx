@@ -1,6 +1,7 @@
 import { useState } from "react";
 import DashboardPage from "./pages/DashboardPage";
 import AnalysisPage from "./pages/AnalysisPage";
+import HistoryPage from "./pages/HistoryPage"; // <-- Import this
 
 const EMPTY_PROJECT = {
   projectId: "",
@@ -47,6 +48,17 @@ export default function App() {
             >
               Analysis
             </button>
+            {/* --- ADD THIS HISTORY BUTTON --- */}
+            <button
+              onClick={() => setPage("history")}
+              className={`rounded px-3 py-1.5 text-sm font-medium ${
+                page === "history"
+                  ? "bg-blue-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              }`}
+            >
+              History
+            </button>
           </nav>
         </div>
       </header>
@@ -61,6 +73,8 @@ export default function App() {
         )}
 
         {page === "analysis" && <AnalysisPage project={project} />}
+
+        {page === "history" && <HistoryPage />}
       </main>
 
       <footer className="mx-auto max-w-6xl px-6 pb-8 pt-4 text-center text-xs text-slate-400">

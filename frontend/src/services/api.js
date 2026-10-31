@@ -35,6 +35,22 @@ export async function mergeViews(caseId, views) {
   return res.json();
 }
 
+export async function saveAnalysisRun(data) {
+  const res = await fetch(`${BASE_URL}/api/history/save`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to save run");
+  return res.json();
+}
+
+export async function getHistory() {
+  const res = await fetch(`${BASE_URL}/api/history/`);
+  if (!res.ok) throw new Error("Failed to fetch history");
+  return res.json();
+}
+
 export async function extractFromFile(file, sourceView) {
   return extractFromBlob(file, file.name, sourceView);
 }

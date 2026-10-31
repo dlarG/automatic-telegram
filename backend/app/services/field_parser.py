@@ -129,24 +129,38 @@ def extract_dimensions(text: str) -> dict:
 def extract_longitudinal_bars(text: str) -> dict:
     text_clean = _normalize_whitespace(text)
 
-    # 1. Narrow down to the MAIN BAR section if it exists
-    main_bar_section = text_clean
-    if "MAIN BAR" in text_clean.upper():
-        main_bar_section = text_clean.upper().split("MAIN BAR")[1]
-
-    # 2. Match "6-φ16mm", "6-Ø16mm", or "6 - 16mm"
-    m = re.search(r"(\d{1,3})\s*[-–]\s*(?:ø|Ø|∅|φ|phi|o|O|0|Q)?\s*(\d{1,3})\s*(?:mm|MM)", main_bar_section, re.IGNORECASE)
+    # 1. Standard formats ("6-φ16mm", "4-16MMO")
+    m = re.search(r"(\d{1,3})\s*[-–]\s*(?:ø|Ø|∅|φ|phi|o|O|0|Q)?\s*(\d{1,3})\s*(?:mm|MM)", text_clean, re.IGNORECASE)
     if m:
         count, diameter = int(m.group(1)), int(m.group(2))
         if 2 <= count <= 50 and 6 <= diameter <= 40:
             return {"bar_count": count, "bar_diameter_mm": diameter}
 
-    # 3. Match "4-16MMO" or "4-16MM0" (The DepEd/OCR issue)
-    m = re.search(r"(\d{1,3})\s*[-–]\s*(\d{1,3})\s*(?:mm|MM)\s*[oO0QØø∅φ]?", main_bar_section, re.IGNORECASE)
-    if m:
-        count, diameter = int(m.group(1)), int(m.group(2))
-        if 2 <= count <= 50 and 6 <= diameter <= 40:
-            return {"bar_count": count, "bar_diameter_mm": diameter}
+    # 2. Tabular format fallback (Numbers on separate lines)
+    # Look for the column dimensions (e.g., 350 and 200) to establish context
+    dims = extract_dimensions(text)
+    if dims.get("width_mm") and dims.get("depth_mm"):
+        
+        # Split text into lines and find all pure numbers
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        numbers = []
+        for ln in lines:
+            if re.match(r"^\d{1,3}$", ln):
+                numbers.append(int(ln))
+        
+        # If we have at least two numbers, the larger one is usually the diameter
+        # and the smaller one is the count.
+        if len(numbers) >= 2:
+            for i in range(len(numbers) - 1):
+                n1 = numbers[i]
+                n2 = numbers[i+1]
+                
+                # Check if this pair makes sense as (Diameter, Count) or (Count, Diameter)
+                # 12 and 6 fits this perfectly.
+                if 10 <= n1 <= 32 and 4 <= n2 <= 30:
+                    return {"bar_count": n2, "bar_diameter_mm": n1}
+                if 4 <= n1 <= 30 and 10 <= n2 <= 32:
+                    return {"bar_count": n1, "bar_diameter_mm": n2}
 
     return {}
 

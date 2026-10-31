@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import ALLOWED_ORIGINS
 from app.routers import extract, merge
+from app.routers import extract, merge, history
 
 app = FastAPI(
     title="RC Column Plan Screening API",
@@ -22,6 +23,7 @@ app.add_middleware(
 
 app.include_router(extract.router)
 app.include_router(merge.router)
+app.include_router(history.router)
 
 
 @app.get("/")

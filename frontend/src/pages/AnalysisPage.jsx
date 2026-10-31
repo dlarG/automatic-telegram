@@ -3,7 +3,12 @@ import UploadPanel from "../components/UploadPanel";
 import ViewSlot from "../components/ViewSlot";
 import ColumnIdentityPanel from "../components/ColumnIdentityPanel";
 import StepHeader from "../components/StepHeader";
-import { extractFromBlob, extractFromFile, mergeViews } from "../services/api";
+import {
+  extractFromBlob,
+  extractFromFile,
+  mergeViews,
+  saveAnalysisRun,
+} from "../services/api";
 
 export default function AnalysisPage({ project }) {
   const [file, setFile] = useState(null);
@@ -23,6 +28,34 @@ export default function AnalysisPage({ project }) {
     gridX: "",
     gridY: "",
   });
+
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    if (!merged) return;
+    setSaving(true);
+    try {
+      await saveAnalysisRun({
+        project_id: project.projectId,
+        project_title: project.title,
+        sheet_id: project.sheetId,
+        prepared_by: project.preparedBy,
+        column_mark: identity.columnMark,
+        storey: identity.storey,
+        grid_x: identity.gridX,
+        grid_y: identity.gridY,
+        merged_fields: merged,
+        rule_results: merged.rule_results,
+      });
+      setSaved(true);
+      alert("Analysis saved to database!");
+    } catch (e) {
+      alert("Error saving: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const [extraction, setExtraction] = useState(null);
   const [running, setRunning] = useState(false);
@@ -194,7 +227,49 @@ export default function AnalysisPage({ project }) {
       )}
 
       {merged && <MergedResultCard merged={merged} />}
+      <button
+        onClick={handleSave}
+        disabled={saving || saved}
+        className="mt-4 rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:bg-slate-300"
+      >
+        {saved
+          ? "✓ Saved to Database"
+          : saving
+          ? "Saving..."
+          : "Save Analysis to Database"}
+      </button>
 
+      <button
+        onClick={() => {
+          let report = `RC COLUMN SCREENING REPORT\n`;
+          report += `===========================\n\n`;
+          report += `Project: ${project?.title || "Unknown"}\n`;
+          report += `Column Mark: ${merged.column_mark}\n`;
+          report += `Dimensions: ${merged.width_mm} x ${merged.depth_mm} mm\n`;
+          report += `Main Bars: ${merged.bar_count} - ${merged.bar_diameter_mm}mm\n`;
+          report += `Ties: ${merged.tie_diameter_mm}mm @ ${merged.tie_spacing_mm}mm\n\n`;
+
+          report += `ENGINEERING CHECKS (NSCP 2015)\n`;
+          report += `-----------------------------\n`;
+          merged.rule_results?.forEach((rule) => {
+            report += `[${rule.status}] ${rule.label}\n`;
+            report += `   ${rule.message}\n\n`;
+          });
+
+          report += `Disclaimer: This is a preliminary automated screening only. It does not replace professional engineering judgment.`;
+
+          const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `Screening_Report_${merged.column_mark || "Column"}.txt`;
+          a.click();
+          URL.revokeObjectURL(url);
+        }}
+        className="mt-4 w-full rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900"
+      >
+        Download Report
+      </button>
       {extraction && <ExtractionResults extraction={extraction} />}
     </div>
   );
@@ -386,6 +461,22 @@ function MergedResultCard({ merged }) {
                       label="Ratio"
                       value={`${rule.details.ratio_percent}%`}
                     />
+                  </div>
+                )}
+                {rule.details?.allowed_limit_mm !== undefined && (
+                  <div className="mt-2 rounded bg-slate-50 p-2 text-xs text-slate-600 font-mono flex flex-col gap-1">
+                    <span>
+                      Limits: 16d_b = {rule.details.limit_by_bar_mm} | 48d_t ={" "}
+                      {rule.details.limit_by_tie_mm} | Dim ={" "}
+                      {rule.details.limit_by_dimension_mm}
+                    </span>
+                    <span>
+                      Strictest Allowed Limit: {rule.details.allowed_limit_mm}{" "}
+                      mm
+                    </span>
+                    <span>
+                      Max Spacing Found: {rule.details.max_spacing_found_mm} mm
+                    </span>
                   </div>
                 )}
               </div>

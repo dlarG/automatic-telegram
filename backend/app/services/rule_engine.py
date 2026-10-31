@@ -147,6 +147,87 @@ def check_min_longitudinal_bars(merged_fields: dict) -> dict:
         }
     }
 
+def check_tie_spacing(merged_fields: dict) -> dict:
+    """
+    Check maximum tie spacing against NSCP 425.7.2.1.
+    Limit is the least of:
+    - 16 * main bar diameter
+    - 48 * tie bar diameter
+    - Smallest column dimension
+    """
+    rule_id = "C3-TIE-SPACING"
+    label = "Maximum Tie Spacing (NSCP 425.7.2.1)"
+    
+    width = merged_fields.get("width_mm")
+    depth = merged_fields.get("depth_mm")
+    main_dia = merged_fields.get("bar_diameter_mm")
+    tie_dia = merged_fields.get("tie_diameter_mm")
+    
+    # We need to check the worst-case spacing. 
+    # If we have zone_spacings, find the maximum spacing in them. 
+    # Otherwise, use the general tie_spacing_mm.
+    zones = merged_fields.get("zone_spacings", [])
+    spacings_to_check = []
+    
+    if zones:
+        spacings_to_check = [z["spacing_mm"] for z in zones]
+    elif merged_fields.get("tie_spacing_mm"):
+        spacings_to_check = [merged_fields.get("tie_spacing_mm")]
+        
+    if not spacings_to_check:
+        return {
+            "rule_id": rule_id,
+            "label": label,
+            "status": "INSUFFICIENT_DOCUMENT_COVERAGE",
+            "message": "No tie spacing values found to evaluate.",
+            "details": {}
+        }
+
+    missing = []
+    if width is None or depth is None: missing.append("width/depth")
+    if main_dia is None: missing.append("main bar diameter")
+    if tie_dia is None: missing.append("tie diameter")
+
+    if missing:
+        return {
+            "rule_id": rule_id,
+            "label": label,
+            "status": "INSUFFICIENT_DOCUMENT_COVERAGE",
+            "message": f"Missing inputs to calculate limit: {', '.join(missing)}",
+            "details": {}
+        }
+
+    # 1. Calculate the three limits
+    limit_bar = 16 * main_dia
+    limit_tie = 48 * tie_dia
+    limit_dim = min(width, depth)
+    
+    # The strictest limit is the smallest of the three
+    max_allowed = min(limit_bar, limit_tie, limit_dim)
+    
+    # 2. Check the worst-case spacing
+    max_actual = max(spacings_to_check)
+
+    if max_actual <= max_allowed:
+        status = "PRELIMINARILY_COMPLIANT"
+        message = f"Max spacing ({max_actual}mm) meets the NSCP limit of {max_allowed}mm."
+    else:
+        status = "PRELIMINARILY_NONCOMPLIANT"
+        message = f"Max spacing ({max_actual}mm) EXCEEDS the NSCP limit of {max_allowed}mm."
+
+    return {
+        "rule_id": rule_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": {
+            "max_spacing_found_mm": max_actual,
+            "allowed_limit_mm": max_allowed,
+            "limit_by_bar_mm": limit_bar,
+            "limit_by_tie_mm": limit_tie,
+            "limit_by_dimension_mm": limit_dim
+        }
+    }
 
 def run_all_rules(merged_fields: dict) -> list:
     """Run all validated rules and return a list of results."""
@@ -160,6 +241,7 @@ def run_all_rules(merged_fields: dict) -> list:
 
     # Rule 3: Tie Diameter
     results.append(check_tie_diameter(merged_fields))
-    # Future rules will be added here once validated by collaborators
-    
+
+    # Rule 4: Tie Spacing
+    results.append(check_tie_spacing(merged_fields))
     return results
