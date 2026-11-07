@@ -10,6 +10,34 @@ import {
   saveAnalysisRun,
 } from "../services/api";
 
+/* Builds and downloads the plain-text screening report. */
+function downloadReport(project, merged) {
+  let report = `RC COLUMN SCREENING REPORT\n`;
+  report += `===========================\n\n`;
+  report += `Project: ${project?.title || "Unknown"}\n`;
+  report += `Column Mark: ${merged.column_mark}\n`;
+  report += `Dimensions: ${merged.width_mm} x ${merged.depth_mm} mm\n`;
+  report += `Main Bars: ${merged.bar_count} - ${merged.bar_diameter_mm}mm\n`;
+  report += `Ties: ${merged.tie_diameter_mm}mm @ ${merged.tie_spacing_mm}mm\n\n`;
+
+  report += `ENGINEERING CHECKS (NSCP 2015)\n`;
+  report += `-----------------------------\n`;
+  merged.rule_results?.forEach((rule) => {
+    report += `[${rule.status}] ${rule.label}\n`;
+    report += `   ${rule.message}\n\n`;
+  });
+
+  report += `Disclaimer: This is a preliminary automated screening only. It does not replace professional engineering judgment.`;
+
+  const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Screening_Report_${merged.column_mark || "Column"}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AnalysisPage({ project }) {
   const [file, setFile] = useState(null);
   const [fileType, setFileType] = useState("");
@@ -31,10 +59,12 @@ export default function AnalysisPage({ project }) {
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const handleSave = async () => {
     if (!merged) return;
     setSaving(true);
+    setSaveError("");
     try {
       await saveAnalysisRun({
         project_id: project.projectId,
@@ -49,9 +79,8 @@ export default function AnalysisPage({ project }) {
         rule_results: merged.rule_results,
       });
       setSaved(true);
-      alert("Analysis saved to database!");
     } catch (e) {
-      alert("Error saving: " + e.message);
+      setSaveError("Could not save: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -83,6 +112,8 @@ export default function AnalysisPage({ project }) {
       }`;
       const result = await mergeViews(caseId, views);
       setMerged(result);
+      setSaved(false); // a new merge result can be saved again
+      setSaveError("");
     } catch (e) {
       setMergeError(e.message || "Merge failed.");
     } finally {
@@ -227,49 +258,18 @@ export default function AnalysisPage({ project }) {
       )}
 
       {merged && <MergedResultCard merged={merged} />}
-      <button
-        onClick={handleSave}
-        disabled={saving || saved}
-        className="mt-4 rounded bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:bg-slate-300"
-      >
-        {saved
-          ? "✓ Saved to Database"
-          : saving
-          ? "Saving..."
-          : "Save Analysis to Database"}
-      </button>
 
-      <button
-        onClick={() => {
-          let report = `RC COLUMN SCREENING REPORT\n`;
-          report += `===========================\n\n`;
-          report += `Project: ${project?.title || "Unknown"}\n`;
-          report += `Column Mark: ${merged.column_mark}\n`;
-          report += `Dimensions: ${merged.width_mm} x ${merged.depth_mm} mm\n`;
-          report += `Main Bars: ${merged.bar_count} - ${merged.bar_diameter_mm}mm\n`;
-          report += `Ties: ${merged.tie_diameter_mm}mm @ ${merged.tie_spacing_mm}mm\n\n`;
+      {merged && (
+        <ExportStep
+          merged={merged}
+          saving={saving}
+          saved={saved}
+          saveError={saveError}
+          onSave={handleSave}
+          onDownload={() => downloadReport(project, merged)}
+        />
+      )}
 
-          report += `ENGINEERING CHECKS (NSCP 2015)\n`;
-          report += `-----------------------------\n`;
-          merged.rule_results?.forEach((rule) => {
-            report += `[${rule.status}] ${rule.label}\n`;
-            report += `   ${rule.message}\n\n`;
-          });
-
-          report += `Disclaimer: This is a preliminary automated screening only. It does not replace professional engineering judgment.`;
-
-          const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `Screening_Report_${merged.column_mark || "Column"}.txt`;
-          a.click();
-          URL.revokeObjectURL(url);
-        }}
-        className="mt-4 w-full rounded bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900"
-      >
-        Download Report
-      </button>
       {extraction && <ExtractionResults extraction={extraction} />}
     </div>
   );
@@ -308,6 +308,115 @@ function ActionStep({
           {error}
         </p>
       )}
+    </section>
+  );
+}
+
+/* Step 6: result summary, save to database, download report */
+function ExportStep({ merged, saving, saved, saveError, onSave, onDownload }) {
+  const rules = merged.rule_results || [];
+  const count = (status) => rules.filter((r) => r.status === status).length;
+
+  const summary = [
+    ["Compliant", count("PRELIMINARILY_COMPLIANT"), "border-green-600"],
+    ["Non-compliant", count("PRELIMINARILY_NONCOMPLIANT"), "border-red-600"],
+    [
+      "Insufficient coverage",
+      count("INSUFFICIENT_DOCUMENT_COVERAGE"),
+      "border-amber-500",
+    ],
+  ];
+
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-5">
+      <StepHeader
+        step={6}
+        title="Save and export"
+        hint="Store this run in the database, then download the screening report."
+      />
+
+      {rules.length > 0 && (
+        <dl className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {summary.map(([label, n, edge]) => (
+            <div
+              key={label}
+              className={`border border-slate-200 border-l-4 bg-slate-50 px-4 py-3 ${edge}`}
+            >
+              <dd className="text-2xl font-semibold text-slate-900">{n}</dd>
+              <dt className="text-sm text-slate-600">{label}</dt>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex flex-col justify-between gap-4 border border-slate-200 p-4">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">
+              Save analysis
+            </h4>
+            <p className="mt-1 text-sm leading-snug text-slate-600">
+              Saves the project, column identity, merged fields and check
+              results to the database.
+            </p>
+          </div>
+          <button
+            onClick={onSave}
+            disabled={saving || saved}
+            className={`self-start rounded px-5 py-2.5 text-sm font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
+              saved
+                ? "border border-green-600 bg-green-50 text-green-900 focus-visible:ring-green-600"
+                : "bg-blue-700 text-white hover:bg-blue-800 focus-visible:ring-blue-700 disabled:bg-slate-300 disabled:text-slate-500"
+            }`}
+          >
+            {saved
+              ? "✓ Saved to database"
+              : saving
+              ? "Saving..."
+              : "Save analysis"}
+          </button>
+        </div>
+
+        <div className="flex flex-col justify-between gap-4 border border-slate-200 p-4">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">
+              Download report
+            </h4>
+            <p className="mt-1 text-sm leading-snug text-slate-600">
+              A plain-text report with the column, its dimensions and each NSCP
+              2015 check.
+            </p>
+          </div>
+          <button
+            onClick={onDownload}
+            className="self-start rounded border border-slate-800 bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-800 focus-visible:ring-offset-2"
+          >
+            Download report
+          </button>
+        </div>
+      </div>
+
+      {saveError && (
+        <p
+          role="alert"
+          className="mt-4 border-l-2 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {saveError}
+        </p>
+      )}
+      {saved && (
+        <p
+          role="status"
+          className="mt-4 border-l-2 border-green-600 bg-green-50 px-3 py-2 text-sm text-green-900"
+        >
+          Analysis saved to the database.
+        </p>
+      )}
+
+      <p className="mt-5 text-xs leading-relaxed text-slate-500">
+        Preliminary automated screening only. It does not replace professional
+        engineering judgment.
+      </p>
     </section>
   );
 }
@@ -463,20 +572,35 @@ function MergedResultCard({ merged }) {
                     />
                   </div>
                 )}
+
                 {rule.details?.allowed_limit_mm !== undefined && (
-                  <div className="mt-2 rounded bg-slate-50 p-2 text-xs text-slate-600 font-mono flex flex-col gap-1">
-                    <span>
-                      Limits: 16d_b = {rule.details.limit_by_bar_mm} | 48d_t ={" "}
-                      {rule.details.limit_by_tie_mm} | Dim ={" "}
-                      {rule.details.limit_by_dimension_mm}
-                    </span>
-                    <span>
-                      Strictest Allowed Limit: {rule.details.allowed_limit_mm}{" "}
-                      mm
-                    </span>
-                    <span>
-                      Max Spacing Found: {rule.details.max_spacing_found_mm} mm
-                    </span>
+                  <div className="mt-3 space-y-px border border-slate-300 bg-slate-300">
+                    <div className="grid grid-cols-3 gap-px text-center">
+                      <Calc
+                        label="Limit by bar (16d_b)"
+                        value={`${rule.details.limit_by_bar_mm} mm`}
+                      />
+                      <Calc
+                        label="Limit by tie (48d_t)"
+                        value={`${rule.details.limit_by_tie_mm} mm`}
+                      />
+                      <Calc
+                        label="Limit by dimension"
+                        value={`${rule.details.limit_by_dimension_mm} mm`}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-px text-center">
+                      <Calc
+                        label="Strictest allowed limit"
+                        value={`${rule.details.allowed_limit_mm} mm`}
+                        strong
+                      />
+                      <Calc
+                        label="Max spacing found"
+                        value={`${rule.details.max_spacing_found_mm} mm`}
+                        strong
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -497,11 +621,17 @@ function MergedResultCard({ merged }) {
   );
 }
 
-function Calc({ label, value }) {
+function Calc({ label, value, strong = false }) {
   return (
-    <div className="bg-slate-50 px-2 py-2">
+    <div className={strong ? "bg-white px-2 py-2.5" : "bg-slate-50 px-2 py-2"}>
       <p className="text-xs text-slate-500">{label}</p>
-      <p className="text-sm font-semibold text-slate-900">{value}</p>
+      <p
+        className={`font-semibold text-slate-900 ${
+          strong ? "text-base" : "text-sm"
+        }`}
+      >
+        {value}
+      </p>
     </div>
   );
 }
