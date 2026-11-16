@@ -229,6 +229,124 @@ def check_tie_spacing(merged_fields: dict) -> dict:
         }
     }
 
+def check_clear_spacing(merged_fields: dict) -> dict:
+    """
+    Check minimum clear spacing between longitudinal bars.
+    NSCP 2015 Section 425.2.3: Clear spacing shall be at least the greatest of 40mm, 1.5db, and 4/3 aggregate size.
+    (We assume 20mm aggregate for the MVP calculation).
+    """
+    rule_id = "C7-CLEAR-SPACING"
+    label = "Minimum Clear Spacing Between Longitudinal Bars (NSCP 425.2.3)"
+    
+    width = merged_fields.get("width_mm")
+    bar_count = merged_fields.get("bar_count")
+    bar_dia = merged_fields.get("bar_diameter_mm")
+    tie_dia = merged_fields.get("tie_diameter_mm")
+
+    missing = []
+    if width is None: missing.append("width_mm")
+    if bar_count is None: missing.append("bar_count")
+    if bar_dia is None: missing.append("bar_diameter_mm")
+    if tie_dia is None: missing.append("tie_diameter_mm")
+
+    if missing:
+        return {
+            "rule_id": rule_id,
+            "label": label,
+            "status": "INSUFFICIENT_DOCUMENT_COVERAGE",
+            "message": f"Missing inputs for calculation: {', '.join(missing)}",
+            "details": {}
+        }
+
+    # Assume 40mm concrete cover (NSCP 420.6.1 for columns)
+    cover = 40
+    # Assume bars are distributed evenly across the face (simplification for MVP)
+    # Number of bars in one row (approx half the total count)
+    bars_per_row = max(2, bar_count // 2)
+    
+    # Width available for steel = total width - (2 * cover) - (2 * tie_dia) - (bar_count in row * bar_dia)
+    available_width = width - (2 * cover) - (2 * tie_dia) - (bars_per_row * bar_dia)
+    
+    # Clear spacing = available width / gaps between bars
+    gaps = max(1, bars_per_row - 1)
+    clear_spacing = available_width / gaps
+
+    # NSCP Limits
+    limit_40 = 40
+    limit_db = 1.5 * bar_dia
+    limit_agg = (4/3) * 20 # Assume 20mm aggregate
+    max_allowed_min = max(limit_40, limit_db, limit_agg)
+
+    if clear_spacing >= max_allowed_min:
+        status = "PRELIMINARILY_COMPLIANT"
+        message = f"Estimated clear spacing ({clear_spacing:.1f}mm) meets the NSCP minimum of {max_allowed_min:.1f}mm."
+    else:
+        status = "PRELIMINARILY_NONCOMPLIANT"
+        message = f"Estimated clear spacing ({clear_spacing:.1f}mm) is BELOW the NSCP minimum of {max_allowed_min:.1f}mm."
+
+    return {
+        "rule_id": rule_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": {
+            "estimated_clear_spacing_mm": round(clear_spacing, 1),
+            "required_min_mm": round(max_allowed_min, 1),
+            "limit_by_40mm": 40,
+            "limit_by_bar_dia": round(limit_db, 1)
+        }
+    }
+
+def check_lateral_tie_support(merged_fields: dict) -> dict:
+    """
+    Check lateral support for longitudinal bars using ties.
+    NSCP 2015 Section 425.7.2.3: The spacing of laterally supported longitudinal bars shall not exceed 150mm.
+    """
+    rule_id = "C8-LATERAL-SUPPORT"
+    label = "Maximum Spacing of Laterally Supported Bars (NSCP 425.7.2.3)"
+    
+    width = merged_fields.get("width_mm")
+    depth = merged_fields.get("depth_mm")
+    bar_count = merged_fields.get("bar_count")
+
+    if width is None or depth is None or bar_count is None:
+        return {
+            "rule_id": rule_id,
+            "label": label,
+            "status": "INSUFFICIENT_DOCUMENT_COVERAGE",
+            "message": "Missing width, depth, or bar count to evaluate lateral support.",
+            "details": {}
+        }
+
+    # Perimeter = 2 * (width + depth)
+    # We subtract the cover to get the perimeter of the tie.
+    perimeter = 2 * ((width - 80) + (depth - 80))
+    
+    # Average spacing = Perimeter / number of bars
+    avg_spacing = perimeter / bar_count
+
+    # NSCP Limit: 150mm
+    max_allowed = 150.0
+
+    if avg_spacing <= max_allowed:
+        status = "PRELIMINARILY_COMPLIANT"
+        message = f"Average perimeter spacing ({avg_spacing:.1f}mm) meets the NSCP requirement of 150mm (no crossties needed)."
+    else:
+        status = "PRELIMINARILY_NONCOMPLIANT"
+        message = f"Average perimeter spacing ({avg_spacing:.1f}mm) EXCEEDS 150mm. Crossties or additional lateral supports are required."
+
+    return {
+        "rule_id": rule_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": {
+            "average_spacing_mm": round(avg_spacing, 1),
+            "allowed_limit_mm": max_allowed,
+            "note": "If this fails, the drawing should explicitly show crossties."
+        }
+    }
+
 def run_all_rules(merged_fields: dict) -> list:
     """Run all validated rules and return a list of results."""
     results = []
@@ -244,4 +362,11 @@ def run_all_rules(merged_fields: dict) -> list:
 
     # Rule 4: Tie Spacing
     results.append(check_tie_spacing(merged_fields))
+    
+    # Rule 5: Clear Spacing (NEW)
+    results.append(check_clear_spacing(merged_fields))
+    
+    # Rule 6: Lateral Support (NEW)
+    results.append(check_lateral_tie_support(merged_fields))
+    
     return results

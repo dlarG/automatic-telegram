@@ -6,6 +6,7 @@ export default function ViewSlot({
   description,
   required,
   pdfFile,
+  imageUrl, // Main image upload (from Step 1)
   capturedImage,
   onCapture,
   onClear,
@@ -14,6 +15,12 @@ export default function ViewSlot({
   const [pageCount, setPageCount] = useState(1);
   const [region, setRegion] = useState(null);
   const canvasRef = useRef(null);
+
+  // New state to allow a specific image upload just for this view
+  const [localImageUrl, setLocalImageUrl] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const activeImageUrl = localImageUrl || imageUrl;
 
   // -------- Region selection handling --------
   const overlayRef = useRef(null);
@@ -54,30 +61,50 @@ export default function ViewSlot({
 
   // -------- Capture --------
   const handleCapture = () => {
-    const canvas = canvasRef.current;
-    if (!canvas || !region || region.w < 5 || region.h < 5) return;
+    const element = canvasRef.current; // This is either a canvas or an img
+    if (!element || !region || region.w < 5 || region.h < 5) return;
 
-    // The region coordinates are in CSS pixels of the overlay.
-    // The canvas may be at a different scale (due to max-width: 100%).
-    const scaleX = canvas.width / canvas.clientWidth;
-    const scaleY = canvas.height / canvas.clientHeight;
+    const cropped = document.createElement("canvas");
+    cropped.width = region.w;
+    cropped.height = region.h;
+    const ctx = cropped.getContext("2d");
+
+    // Calculate scale (images might be displayed smaller than their actual resolution)
+    const scaleX = element.width / element.clientWidth;
+    const scaleY = element.height / element.clientHeight;
 
     const cropX = region.x * scaleX;
     const cropY = region.y * scaleY;
     const cropW = region.w * scaleX;
     const cropH = region.h * scaleY;
 
-    const cropped = document.createElement("canvas");
-    cropped.width = Math.round(cropW);
-    cropped.height = Math.round(cropH);
-    const ctx = cropped.getContext("2d");
-    ctx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+    ctx.drawImage(
+      element,
+      cropX,
+      cropY,
+      cropW,
+      cropH,
+      0,
+      0,
+      region.w,
+      region.h
+    );
 
     cropped.toBlob((blob) => {
       if (!blob) return;
       const url = URL.createObjectURL(blob);
       onCapture(blob, url);
     }, "image/png");
+  };
+
+  // -------- Handle Local Image Upload --------
+  const handleLocalImageUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setLocalImageUrl(url);
+      setRegion(null); // Reset selection
+    }
   };
 
   const hasRegion = region && region.w > 5 && region.h > 5;
@@ -120,50 +147,75 @@ export default function ViewSlot({
           </div>
         </div>
 
-        {capturedImage && (
-          <button
-            onClick={() => {
-              onClear();
-              setRegion(null);
-            }}
-            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-          >
-            Re-capture
-          </button>
-        )}
+        <div className="flex gap-2">
+          {/* Allow uploading a specific image for this view */}
+          {!capturedImage && (
+            <>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png"
+                className="hidden"
+                ref={fileInputRef}
+                onChange={handleLocalImageUpload}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Upload Image
+              </button>
+            </>
+          )}
+
+          {capturedImage && (
+            <button
+              onClick={() => {
+                onClear();
+                setRegion(null);
+                setLocalImageUrl(null);
+              }}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+            >
+              Re-capture
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Selecting */}
       {!capturedImage && (
         <>
-          {pdfFile ? (
+          {pdfFile || activeImageUrl ? (
             <>
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-slate-600">
-                  Drag on the page to draw a box around this view.
-                </p>
-                <div className="flex items-center border border-slate-300">
-                  <button
-                    onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-                    disabled={pageNumber <= 1}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 disabled:text-slate-300 disabled:hover:bg-transparent"
-                  >
-                    Prev
-                  </button>
-                  <span className="border-x border-slate-300 px-3 py-1.5 text-xs text-slate-700">
-                    Page {pageNumber} of {pageCount}
-                  </span>
-                  <button
-                    onClick={() =>
-                      setPageNumber((p) => Math.min(pageCount, p + 1))
-                    }
-                    disabled={pageNumber >= pageCount}
-                    className="px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600 disabled:text-slate-300 disabled:hover:bg-transparent"
-                  >
-                    Next
-                  </button>
+              {/* Only show pagination if it's a PDF and we don't have a local image */}
+              {pdfFile && !localImageUrl && (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-slate-600">
+                    Drag on the page to draw a box around this view.
+                  </p>
+                  <div className="flex items-center border border-slate-300">
+                    <button
+                      onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
+                      disabled={pageNumber <= 1}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 disabled:text-slate-300"
+                    >
+                      Prev
+                    </button>
+                    <span className="border-x border-slate-300 px-3 py-1.5 text-xs text-slate-700">
+                      Page {pageNumber} of {pageCount}
+                    </span>
+                    <button
+                      onClick={() =>
+                        setPageNumber((p) => Math.min(pageCount, p + 1))
+                      }
+                      disabled={pageNumber >= pageCount}
+                      className="px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 disabled:text-slate-300"
+                    >
+                      Next
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="mt-3 max-h-[70vh] overflow-auto rounded-sm border border-slate-300 bg-slate-200 p-3">
                 <div
@@ -175,14 +227,27 @@ export default function ViewSlot({
                   onMouseUp={onMouseUp}
                   onMouseLeave={onMouseUp}
                 >
-                  <PdfViewer
-                    pdfFile={pdfFile}
-                    pageNumber={pageNumber}
-                    onPageRendered={(canvas) => {
-                      canvasRef.current = canvas;
-                    }}
-                    onPageCount={setPageCount}
-                  />
+                  {/* Render Image if we have one, otherwise PDF */}
+                  {localImageUrl || !pdfFile ? (
+                    <img
+                      src={localImageUrl || activeImageUrl}
+                      alt="Uploaded drawing"
+                      className="block max-w-full"
+                      ref={(el) => {
+                        if (el) canvasRef.current = el;
+                      }}
+                    />
+                  ) : (
+                    <PdfViewer
+                      pdfFile={pdfFile}
+                      pageNumber={pageNumber}
+                      onPageRendered={(canvas) => {
+                        canvasRef.current = canvas;
+                      }}
+                      onPageCount={setPageCount}
+                    />
+                  )}
+
                   {region && region.w > 2 && region.h > 2 && (
                     <div
                       className="pointer-events-none absolute border-2 border-blue-600 bg-blue-600/10"
@@ -208,7 +273,7 @@ export default function ViewSlot({
                 <button
                   onClick={handleCapture}
                   disabled={!hasRegion}
-                  className="rounded bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2 disabled:bg-slate-300 disabled:text-slate-500"
+                  className="rounded bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:bg-slate-300"
                 >
                   Capture view {label}
                 </button>
@@ -217,11 +282,11 @@ export default function ViewSlot({
           ) : (
             <div className="mt-4 rounded-sm border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
               <p className="text-sm font-medium text-slate-700">
-                Waiting for a PDF
+                Waiting for a Source Document
               </p>
               <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
-                Upload a PDF in step 1 to pick a page and crop this view. An
-                image upload is used as it is.
+                Upload a PDF in step 1, or click "Upload Image" above to provide
+                a specific screenshot for this view.
               </p>
             </div>
           )}
@@ -230,11 +295,11 @@ export default function ViewSlot({
 
       {/* Captured */}
       {capturedImage && (
-        <div className="mt-4 rounded-sm border border-slate-300 bg-slate-200 p-3">
+        <div className="mt-3">
           <img
             src={capturedImage}
             alt={`View ${label}`}
-            className="max-h-72 max-w-full bg-white"
+            className="max-h-64 rounded border border-slate-200"
           />
         </div>
       )}

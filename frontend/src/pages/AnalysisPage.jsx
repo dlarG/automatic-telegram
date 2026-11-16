@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import UploadPanel from "../components/UploadPanel";
 import ViewSlot from "../components/ViewSlot";
 import ColumnIdentityPanel from "../components/ColumnIdentityPanel";
@@ -45,6 +45,7 @@ export default function AnalysisPage({ project }) {
   const [merged, setMerged] = useState(null);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState("");
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
 
   const [viewA, setViewA] = useState({ blob: null, url: "" });
   const [viewB, setViewB] = useState({ blob: null, url: "" });
@@ -64,13 +65,31 @@ export default function AnalysisPage({ project }) {
   const handleSave = async () => {
     if (!merged) return;
     setSaving(true);
-    setSaveError("");
+
+    // Helper to convert Blob to Base64
+    const toBase64 = (file) =>
+      new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = (error) => reject(error);
+      });
+
     try {
+      // Convert the crops if they exist
+      const base64A = viewA.blob ? await toBase64(viewA.blob) : null;
+      const base64B = viewB.blob ? await toBase64(viewB.blob) : null;
+      const base64C = viewC.blob ? await toBase64(viewC.blob) : null;
+
       await saveAnalysisRun({
         project_id: project.projectId,
         project_title: project.title,
         sheet_id: project.sheetId,
         prepared_by: project.preparedBy,
+        file_name: file ? file.name : "Image Upload",
+        view_a_crop: base64A,
+        view_b_crop: base64B,
+        view_c_crop: base64C,
         column_mark: identity.columnMark,
         storey: identity.storey,
         grid_x: identity.gridX,
@@ -79,8 +98,9 @@ export default function AnalysisPage({ project }) {
         rule_results: merged.rule_results,
       });
       setSaved(true);
+      alert("Analysis saved to database!");
     } catch (e) {
-      setSaveError("Could not save: " + e.message);
+      alert("Error saving: " + e.message);
     } finally {
       setSaving(false);
     }
@@ -91,6 +111,18 @@ export default function AnalysisPage({ project }) {
   const [runError, setRunError] = useState("");
 
   const isPdf = fileType === "application/pdf";
+
+  // Update image preview when a new file is uploaded
+  useEffect(() => {
+    if (file && !isPdf) {
+      const url = URL.createObjectURL(file);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setImagePreviewUrl(url);
+      return () => URL.revokeObjectURL(url); // Cleanup memory
+    } else {
+      setImagePreviewUrl("");
+    }
+  }, [file, isPdf]);
 
   const runMerge = async () => {
     if (!extraction) {
@@ -126,8 +158,11 @@ export default function AnalysisPage({ project }) {
     setRunError("");
     setExtraction(null);
 
-    if (!file) {
-      setRunError("Please upload a source document first.");
+    // Check if we have a source document OR at least one captured view
+    if (!file && !viewA.blob && !viewB.blob && !viewC.blob) {
+      setRunError(
+        "Please upload a source document or capture at least one view."
+      );
       return;
     }
 
@@ -135,23 +170,22 @@ export default function AnalysisPage({ project }) {
     try {
       const results = {};
 
-      // Send View A (locator) — informational, parser will extract column mark
-      if (isPdf && viewA.blob) {
+      // Send View A
+      if (viewA.blob) {
         results.A = await extractFromBlob(viewA.blob, "viewA.png", "A");
       } else if (file && !isPdf) {
         results.A = await extractFromFile(file, "A");
       } else if (file && isPdf && !viewA.blob) {
-        // No crop yet — send whole PDF as fallback
         results.A = await extractFromFile(file, "A");
       }
 
-      // Send View B (schedule) — primary source for fields
-      if (isPdf && viewB.blob) {
+      // Send View B (This now works whether it's from PDF crop or Image upload)
+      if (viewB.blob) {
         results.B = await extractFromBlob(viewB.blob, "viewB.png", "B");
       }
 
-      // Send View C (detail) — optional
-      if (isPdf && viewC.blob) {
+      // Send View C
+      if (viewC.blob) {
         results.C = await extractFromBlob(viewC.blob, "viewC.png", "C");
       }
 
@@ -205,6 +239,7 @@ export default function AnalysisPage({ project }) {
             description="Locator / context"
             required
             pdfFile={isPdf ? file : null}
+            imageUrl={!isPdf ? imagePreviewUrl : null}
             capturedImage={viewA.url}
             onCapture={(blob, url) => setViewA({ blob, url })}
             onClear={() => setViewA({ blob: null, url: "" })}
@@ -214,6 +249,7 @@ export default function AnalysisPage({ project }) {
             description="Column schedule cell"
             required
             pdfFile={isPdf ? file : null}
+            imageUrl={!isPdf ? imagePreviewUrl : null}
             capturedImage={viewB.url}
             onCapture={(blob, url) => setViewB({ blob, url })}
             onClear={() => setViewB({ blob: null, url: "" })}
@@ -223,6 +259,7 @@ export default function AnalysisPage({ project }) {
             description="Supporting detail / note"
             required={false}
             pdfFile={isPdf ? file : null}
+            imageUrl={!isPdf ? imagePreviewUrl : null}
             capturedImage={viewC.url}
             onCapture={(blob, url) => setViewC({ blob, url })}
             onClear={() => setViewC({ blob: null, url: "" })}
@@ -556,53 +593,103 @@ function MergedResultCard({ merged }) {
                   </span>
                 </div>
 
-                {rule.details?.ratio_percent !== undefined && (
-                  <div className="mt-3 grid grid-cols-3 gap-px border border-slate-300 bg-slate-300 text-center">
-                    <Calc
-                      label="Gross area A_g"
-                      value={`${rule.details.gross_area_mm2} mm²`}
-                    />
-                    <Calc
-                      label="Steel area A_st"
-                      value={`${rule.details.steel_area_mm2} mm²`}
-                    />
-                    <Calc
-                      label="Ratio"
-                      value={`${rule.details.ratio_percent}%`}
-                    />
-                  </div>
-                )}
+                {/* C1: Rebar Ratio */}
+                {rule.rule_id === "REBAR-RATIO-01" &&
+                  rule.details?.ratio_percent !== undefined && (
+                    <div className="mt-3 grid grid-cols-3 gap-px border border-slate-300 bg-slate-300 text-center">
+                      <Calc
+                        label="Gross area A_g"
+                        value={`${rule.details.gross_area_mm2} mm²`}
+                      />
+                      <Calc
+                        label="Steel area A_st"
+                        value={`${rule.details.steel_area_mm2} mm²`}
+                      />
+                      <Calc
+                        label="Ratio"
+                        value={`${rule.details.ratio_percent}%`}
+                      />
+                    </div>
+                  )}
 
-                {rule.details?.allowed_limit_mm !== undefined && (
-                  <div className="mt-3 space-y-px border border-slate-300 bg-slate-300">
-                    <div className="grid grid-cols-3 gap-px text-center">
-                      <Calc
-                        label="Limit by bar (16d_b)"
-                        value={`${rule.details.limit_by_bar_mm} mm`}
-                      />
-                      <Calc
-                        label="Limit by tie (48d_t)"
-                        value={`${rule.details.limit_by_tie_mm} mm`}
-                      />
-                      <Calc
-                        label="Limit by dimension"
-                        value={`${rule.details.limit_by_dimension_mm} mm`}
-                      />
+                {/* C3: Tie Spacing */}
+                {rule.rule_id === "C3-TIE-SPACING" &&
+                  rule.details?.allowed_limit_mm !== undefined && (
+                    <div className="mt-3 space-y-px border border-slate-300 bg-slate-300">
+                      <div className="grid grid-cols-3 gap-px text-center">
+                        <Calc
+                          label="Limit by bar (16d_b)"
+                          value={`${rule.details.limit_by_bar_mm} mm`}
+                        />
+                        <Calc
+                          label="Limit by tie (48d_t)"
+                          value={`${rule.details.limit_by_tie_mm} mm`}
+                        />
+                        <Calc
+                          label="Limit by dimension"
+                          value={`${rule.details.limit_by_dimension_mm} mm`}
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-px text-center">
+                        <Calc
+                          label="Strictest allowed limit"
+                          value={`${rule.details.allowed_limit_mm} mm`}
+                          strong
+                        />
+                        <Calc
+                          label="Max spacing found"
+                          value={`${rule.details.max_spacing_found_mm} mm`}
+                          strong
+                        />
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-px text-center">
-                      <Calc
-                        label="Strictest allowed limit"
-                        value={`${rule.details.allowed_limit_mm} mm`}
-                        strong
-                      />
-                      <Calc
-                        label="Max spacing found"
-                        value={`${rule.details.max_spacing_found_mm} mm`}
-                        strong
-                      />
+                  )}
+
+                {/* C7: Clear Spacing */}
+                {rule.rule_id === "C7-CLEAR-SPACING" &&
+                  rule.details?.estimated_clear_spacing_mm !== undefined && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <div className="text-center">
+                        <span className="block text-slate-400">
+                          Required Min
+                        </span>
+                        <span className="font-mono font-medium">
+                          {rule.details.required_min_mm} mm
+                        </span>
+                      </div>
+                      <div className="text-center border-l border-slate-200">
+                        <span className="block text-slate-400">
+                          Estimated Actual
+                        </span>
+                        <span className="font-mono font-medium">
+                          {rule.details.estimated_clear_spacing_mm} mm
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                {/* C8: Lateral Support */}
+                {rule.rule_id === "C8-LATERAL-SUPPORT" &&
+                  rule.details?.average_spacing_mm !== undefined && (
+                    <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
+                      <div className="text-center">
+                        <span className="block text-slate-400">
+                          Allowed Limit
+                        </span>
+                        <span className="font-mono font-medium">
+                          {rule.details.allowed_limit_mm} mm
+                        </span>
+                      </div>
+                      <div className="text-center border-l border-slate-200">
+                        <span className="block text-slate-400">
+                          Average Perimeter Spacing
+                        </span>
+                        <span className="font-mono font-medium">
+                          {rule.details.average_spacing_mm} mm
+                        </span>
+                      </div>
+                    </div>
+                  )}
               </div>
             ))}
           </div>

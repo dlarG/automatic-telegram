@@ -1,4 +1,4 @@
-import pymupdf  # PyMuPDF
+import pymupdf  # type: ignore # PyMuPDF
 
 # Minimum characters per page to consider a PDF "digital" (has embedded text).
 # Scanned PDFs often extract a handful of stray characters from stamps/logos,

@@ -54,3 +54,11 @@ export async function getHistory() {
 export async function extractFromFile(file, sourceView) {
   return extractFromBlob(file, file.name, sourceView);
 }
+
+export async function deleteHistoryRun(id) {
+  const res = await fetch(`${BASE_URL}/api/history/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete run");
+  return res.json();
+}

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime
+from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 
@@ -26,6 +26,13 @@ class AnalysisRun(Base):
     project_title = Column(String)
     sheet_id = Column(String)
     prepared_by = Column(String)
+    
+    # NEW: Grouping and File Storage
+    file_name = Column(String, index=True)
+    # We store base64 strings for the cropped images
+    view_a_crop = Column(Text, nullable=True) 
+    view_b_crop = Column(Text, nullable=True)
+    view_c_crop = Column(Text, nullable=True)
     
     # Column Identity
     column_mark = Column(String)
