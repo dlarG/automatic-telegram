@@ -90,6 +90,7 @@ export default function PdfViewer({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfFile, pageNumber]);
 
   return (

@@ -1,0 +1,30 @@
+RC COLUMN SCREENING REPORT
+===========================
+
+Project: Anahawan 2 Storey
+Column Mark: C-1
+Dimensions: 450 x 450 mm
+Main Bars: 12 - 25mm
+Ties: 10mm @ 75mm
+
+ENGINEERING CHECKS (NSCP 2015)
+-----------------------------
+[PRELIMINARILY_COMPLIANT] Longitudinal Reinforcement Ratio (1% - 6%)
+   The reinforcement ratio is within the 1% - 6% limit.
+
+[PRELIMINARILY_COMPLIANT] Minimum Number of Longitudinal Bars (NSCP 410.7.3.1)
+   Bar count (12) meets the NSCP minimum of 4 bars for tied columns.
+
+[PRELIMINARILY_COMPLIANT] Minimum Tie Bar Diameter (NSCP 425.7.2.2)
+   Tie diameter (10mm) meets the minimum 10mm requirement.
+
+[PRELIMINARILY_COMPLIANT] Maximum Tie Spacing (NSCP 425.7.2.1)
+   Max spacing (75mm) meets the NSCP limit of 400mm.
+
+[PRELIMINARILY_COMPLIANT] Minimum Clear Spacing Between Longitudinal Bars (NSCP 425.2.3)
+   Estimated clear spacing (40.0mm) meets the NSCP minimum of 40.0mm.
+
+[PRELIMINARILY_COMPLIANT] Maximum Spacing of Laterally Supported Bars (NSCP 425.7.2.3)
+   Average perimeter spacing (123.3mm) meets the NSCP requirement of 150mm (no crossties needed).
+
+Disclaimer: This is a preliminary automated screening only. It does not replace professional engineering judgment.
