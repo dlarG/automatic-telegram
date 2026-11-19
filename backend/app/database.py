@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, JSON, DateTime, Text, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime
 
@@ -25,7 +25,7 @@ class AnalysisRun(Base):
     project_id = Column(String, index=True)
     project_title = Column(String)
     sheet_id = Column(String)
-    prepared_by = Column(String)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     # NEW: Grouping and File Storage
     file_name = Column(String, index=True)

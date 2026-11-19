@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -7,112 +7,112 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 export default function PdfViewer({
   pdfFile,
   pageNumber,
+  scale,
   onPageRendered,
   onPageCount,
 }) {
   const canvasRef = useRef(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const renderTaskRef = useRef(null);
+
+  // Keep callbacks current without restarting the PDF rendering effect.
+  const callbacksRef = useRef({ onPageRendered, onPageCount });
+
+  callbacksRef.current = { onPageRendered, onPageCount };
 
   useEffect(() => {
     let cancelled = false;
+    let renderTask = null;
 
     async function render() {
       if (!pdfFile) return;
-      setLoading(true);
-      setError("");
 
       try {
+        // Cancel any previous rendering operation.
+        renderTaskRef.current?.cancel();
+
         const buffer = await pdfFile.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
         if (cancelled) return;
 
-        if (onPageCount) onPageCount(pdf.numPages);
+        const loadingTask = pdfjsLib.getDocument({ data: buffer });
+        const pdf = await loadingTask.promise;
+
+        if (cancelled) {
+          await loadingTask.destroy();
+          return;
+        }
+
+        callbacksRef.current.onPageCount?.(pdf.numPages);
+
+        if (pageNumber > pdf.numPages) return;
 
         const page = await pdf.getPage(pageNumber);
         if (cancelled) return;
 
-        // --- STRICTER SCALING ---
-        // We set a much smaller max dimension to ensure the browser doesn't crash.
-        // 1500px is plenty for OCR and cropping.
-        const MAX_DIMENSION = 1500;
-        const baseViewport = page.getViewport({ scale: 1.0 });
+        // Original page dimensions at 100%.
+        const baseViewport = page.getViewport({ scale: 1 });
 
-        let scale = 1.5;
-        // If the page is huge, scale it down so it fits in 1500x1500
-        if (
-          baseViewport.width > MAX_DIMENSION ||
-          baseViewport.height > MAX_DIMENSION
-        ) {
-          const scaleW = MAX_DIMENSION / baseViewport.width;
-          const scaleH = MAX_DIMENSION / baseViewport.height;
-          scale = Math.min(scaleW, scaleH);
-        }
+        // Render at 2x resolution for better crop/OCR quality.
+        const MAX_DIMENSION = 4000;
+        const desiredRenderScale = scale * 2;
 
-        // Ensure scale is at least readable (0.5)
-        scale = Math.max(scale, 0.5);
+        const dimensionLimit = Math.min(
+          MAX_DIMENSION / baseViewport.width,
+          MAX_DIMENSION / baseViewport.height
+        );
 
-        const finalViewport = page.getViewport({ scale: scale });
+        const renderScale = Math.min(desiredRenderScale, dimensionLimit);
+
+        const renderViewport = page.getViewport({
+          scale: renderScale,
+        });
+
+        // Display dimensions are independent of render resolution.
+        const displayWidth = baseViewport.width * scale;
+        const displayHeight = baseViewport.height * scale;
+
         const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
 
-        // Clear previous canvas data to free memory
-        canvas.width = 0;
-        canvas.height = 0;
-        canvas.width = finalViewport.width;
-        canvas.height = finalViewport.height;
+        const context = canvas.getContext("2d", {
+          alpha: false,
+        });
 
-        const context = canvas.getContext("2d");
+        canvas.width = Math.ceil(renderViewport.width);
+        canvas.height = Math.ceil(renderViewport.height);
 
-        // Add a white background fill just in case the PDF has transparency
-        context.fillStyle = "#FFFFFF";
-        context.fillRect(0, 0, canvas.width, canvas.height);
+        // CSS dimensions control what the user sees.
+        canvas.style.width = `${displayWidth}px`;
+        canvas.style.height = `${displayHeight}px`;
 
-        const renderContext = {
+        renderTask = page.render({
           canvasContext: context,
-          viewport: finalViewport,
-        };
+          viewport: renderViewport,
+        });
 
-        await page.render(renderContext).promise;
+        renderTaskRef.current = renderTask;
+
+        await renderTask.promise;
+
         if (cancelled) return;
 
-        onPageRendered?.(canvas);
-      } catch (e) {
-        console.error("PDF Render Error:", e);
-        setError(
-          `Could not render this specific page. It might be too large or contain complex vectors. (${e.message})`
-        );
-      } finally {
-        if (!cancelled) setLoading(false);
+        callbacksRef.current.onPageRendered?.(canvas);
+      } catch (error) {
+        if (error.name !== "RenderingCancelledException") {
+          if (!cancelled) {
+            console.error("PDF Render Error:", error);
+          }
+        }
       }
     }
 
     render();
+
     return () => {
       cancelled = true;
+      renderTask?.cancel();
+      renderTaskRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdfFile, pageNumber]);
+  }, [pdfFile, pageNumber, scale]);
 
-  return (
-    <div className="rounded border border-slate-200 bg-white p-3 min-h-[400px] flex items-center justify-center">
-      {loading && <p className="text-sm text-slate-500">Rendering page...</p>}
-
-      {error && (
-        <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 text-center max-w-md">
-          <p className="font-semibold mb-1">Rendering Failed</p>
-          <p>{error}</p>
-          <p className="mt-2 text-xs">
-            Try taking a direct screenshot of the page and uploading it as an
-            image instead.
-          </p>
-        </div>
-      )}
-
-      <canvas
-        ref={canvasRef}
-        className="block max-w-full shadow-sm"
-        style={{ display: loading || error ? "none" : "block" }}
-      />
-    </div>
-  );
+  return <canvas ref={canvasRef} className="block max-w-none bg-white" />;
 }

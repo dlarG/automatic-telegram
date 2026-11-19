@@ -14,43 +14,60 @@ def get_db():
         db.close()
 
 class SaveRunRequest(BaseModel):
+    user_id: Optional[int] = None
+
     project_id: Optional[str] = "P001"
     project_title: Optional[str] = "Untitled"
     sheet_id: Optional[str] = ""
-    prepared_by: Optional[str] = ""
-    file_name: Optional[str] = "Unknown File" # NEW
-    view_a_crop: Optional[str] = None # NEW (base64)
-    view_b_crop: Optional[str] = None # NEW
-    view_c_crop: Optional[str] = None # NEW
+
+    file_name: Optional[str] = "Unknown File"
+    view_a_crop: Optional[str] = None
+    view_b_crop: Optional[str] = None
+    view_c_crop: Optional[str] = None
+
     column_mark: Optional[str] = None
     storey: Optional[str] = None
     grid_x: Optional[str] = None
     grid_y: Optional[str] = None
+
     merged_fields: Dict[str, Any]
     rule_results: List[Dict[str, Any]]
 
 @router.post("/save")
-async def save_analysis_run(payload: SaveRunRequest, db: Session = Depends(get_db)):
+async def save_analysis_run(
+    payload: SaveRunRequest,
+    db: Session = Depends(get_db)
+):
     run = AnalysisRun(
+        user_id=payload.user_id,
+
         project_id=payload.project_id,
         project_title=payload.project_title,
         sheet_id=payload.sheet_id,
-        prepared_by=payload.prepared_by,
+
         file_name=payload.file_name,
+
         view_a_crop=payload.view_a_crop,
         view_b_crop=payload.view_b_crop,
         view_c_crop=payload.view_c_crop,
+
         column_mark=payload.column_mark,
         storey=payload.storey,
         grid_x=payload.grid_x,
         grid_y=payload.grid_y,
+
         merged_fields=payload.merged_fields,
         rule_results=payload.rule_results,
     )
+
     db.add(run)
     db.commit()
     db.refresh(run)
-    return {"status": "success", "run_id": run.id}
+
+    return {
+        "status": "success",
+        "run_id": run.id
+    }
 
 @router.get("/")
 async def get_all_runs(db: Session = Depends(get_db)):

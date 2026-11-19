@@ -64,9 +64,15 @@ export default function AnalysisPage({ project }) {
 
   const handleSave = async () => {
     if (!merged) return;
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+
+    if (!user?.id) {
+      alert("User session not found. Please log in again.");
+      return;
+    }
+
     setSaving(true);
 
-    // Helper to convert Blob to Base64
     const toBase64 = (file) =>
       new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -76,27 +82,32 @@ export default function AnalysisPage({ project }) {
       });
 
     try {
-      // Convert the crops if they exist
       const base64A = viewA.blob ? await toBase64(viewA.blob) : null;
       const base64B = viewB.blob ? await toBase64(viewB.blob) : null;
       const base64C = viewC.blob ? await toBase64(viewC.blob) : null;
 
       await saveAnalysisRun({
+        user_id: user.id,
+
         project_id: project.projectId,
         project_title: project.title,
         sheet_id: project.sheetId,
-        prepared_by: project.preparedBy,
+
         file_name: file ? file.name : "Image Upload",
+
         view_a_crop: base64A,
         view_b_crop: base64B,
         view_c_crop: base64C,
+
         column_mark: identity.columnMark,
         storey: identity.storey,
         grid_x: identity.gridX,
         grid_y: identity.gridY,
+
         merged_fields: merged,
         rule_results: merged.rule_results,
       });
+
       setSaved(true);
       alert("Analysis saved to database!");
     } catch (e) {

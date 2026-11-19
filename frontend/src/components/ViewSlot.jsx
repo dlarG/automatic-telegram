@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import PdfViewer from "./PdfViewer";
 
 export default function ViewSlot({
@@ -6,7 +6,7 @@ export default function ViewSlot({
   description,
   required,
   pdfFile,
-  imageUrl, // Main image upload (from Step 1)
+  imageUrl,
   capturedImage,
   onCapture,
   onClear,
@@ -14,18 +14,23 @@ export default function ViewSlot({
   const [pageNumber, setPageNumber] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const [region, setRegion] = useState(null);
+  const [pdfScale, setPdfScale] = useState(1);
   const canvasRef = useRef(null);
-
-  // New state to allow a specific image upload just for this view
-  const [localImageUrl, setLocalImageUrl] = useState(null);
-  const fileInputRef = useRef(null);
-
-  const activeImageUrl = localImageUrl || imageUrl;
-
-  // -------- Region selection handling --------
   const overlayRef = useRef(null);
   const [dragging, setDragging] = useState(false);
   const [start, setStart] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // Auto-capture if an image is passed from Step 1
+  useEffect(() => {
+    if (imageUrl && !capturedImage) {
+      fetch(imageUrl)
+        .then((res) => res.blob())
+        .then((blob) => {
+          onCapture(blob, imageUrl);
+        });
+    }
+  }, [imageUrl, capturedImage, onCapture]);
 
   const getRelPos = (e) => {
     const rect = overlayRef.current.getBoundingClientRect();
@@ -59,36 +64,36 @@ export default function ViewSlot({
     setStart(null);
   };
 
-  // -------- Capture --------
+  // -------- The Precise Cropping Fix --------
   const handleCapture = () => {
-    const element = canvasRef.current; // This is either a canvas or an img
+    const element = canvasRef.current; // This is the <canvas> or <img>
     if (!element || !region || region.w < 5 || region.h < 5) return;
 
-    const cropped = document.createElement("canvas");
-    cropped.width = region.w;
-    cropped.height = region.h;
-    const ctx = cropped.getContext("2d");
+    // 1. Get the real dimensions of the element (not CSS dimensions)
+    // If it's a canvas, it has .width/.height. If it's an img, it has .naturalWidth/.naturalHeight
+    const realWidth = element.width || element.naturalWidth;
+    const realHeight = element.height || element.naturalHeight;
 
-    // Calculate scale (images might be displayed smaller than their actual resolution)
-    const scaleX = element.width / element.clientWidth;
-    const scaleY = element.height / element.clientHeight;
+    // 2. Get the CSS dimensions (what you actually see on screen)
+    const rect = overlayRef.current.getBoundingClientRect();
 
+    // 3. Calculate the scale factor between real pixels and CSS pixels
+    const scaleX = realWidth / rect.width;
+    const scaleY = realHeight / rect.height;
+
+    // 4. Map the selection box coordinates to real pixels
     const cropX = region.x * scaleX;
     const cropY = region.y * scaleY;
     const cropW = region.w * scaleX;
     const cropH = region.h * scaleY;
 
-    ctx.drawImage(
-      element,
-      cropX,
-      cropY,
-      cropW,
-      cropH,
-      0,
-      0,
-      region.w,
-      region.h
-    );
+    const cropped = document.createElement("canvas");
+    cropped.width = cropW;
+    cropped.height = cropH;
+    const ctx = cropped.getContext("2d");
+
+    // 5. Draw the precise high-res crop
+    ctx.drawImage(element, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
     cropped.toBlob((blob) => {
       if (!blob) return;
@@ -97,27 +102,22 @@ export default function ViewSlot({
     }, "image/png");
   };
 
-  // -------- Handle Local Image Upload --------
   const handleLocalImageUpload = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
-      setLocalImageUrl(url);
-      setRegion(null); // Reset selection
+      onCapture(file, url);
     }
   };
 
   const hasRegion = region && region.w > 5 && region.h > 5;
-
+  const activeImageUrl = imageUrl;
+  const scrollContainerRef = useRef(null);
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div className="flex items-start gap-3">
-          <span
-            aria-hidden="true"
-            className="flex h-8 w-8 flex-none items-center justify-center rounded-sm bg-slate-900 text-base font-semibold text-white"
-          >
+          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-sm bg-slate-900 text-base font-semibold text-white">
             {label}
           </span>
           <div>
@@ -125,22 +125,10 @@ export default function ViewSlot({
               View {label}: {description}
             </h3>
             <p className="mt-0.5 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-              {required ? "Required" : "Optional. Only if a check needs it."}
+              {required ? "Required" : "Optional."}
               {capturedImage && (
                 <span className="inline-flex items-center gap-1 rounded-sm border-l-4 border-green-600 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-900">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-3 w-3"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="m5 12 5 5 9-10" />
-                  </svg>
-                  Captured
+                  ✓ Captured
                 </span>
               )}
             </p>
@@ -148,7 +136,6 @@ export default function ViewSlot({
         </div>
 
         <div className="flex gap-2">
-          {/* Allow uploading a specific image for this view */}
           {!capturedImage && (
             <>
               <input
@@ -166,15 +153,13 @@ export default function ViewSlot({
               </button>
             </>
           )}
-
           {capturedImage && (
             <button
               onClick={() => {
                 onClear();
                 setRegion(null);
-                setLocalImageUrl(null);
               }}
-              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
             >
               Re-capture
             </button>
@@ -182,26 +167,22 @@ export default function ViewSlot({
         </div>
       </div>
 
-      {/* Selecting */}
       {!capturedImage && (
         <>
           {pdfFile || activeImageUrl ? (
             <>
-              {/* Only show pagination if it's a PDF and we don't have a local image */}
-              {pdfFile && !localImageUrl && (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-slate-600">
-                    Drag on the page to draw a box around this view.
-                  </p>
-                  <div className="flex items-center border border-slate-300">
+              {pdfFile && !activeImageUrl && (
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <p className="text-sm text-slate-600">Drag to draw a box.</p>
+                  <div className="flex items-center border border-slate-300 bg-white">
                     <button
                       onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
                       disabled={pageNumber <= 1}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 disabled:text-slate-300"
+                      className="px-3 py-1.5 text-xs hover:bg-slate-100 disabled:opacity-50"
                     >
                       Prev
                     </button>
-                    <span className="border-x border-slate-300 px-3 py-1.5 text-xs text-slate-700">
+                    <span className="border-x border-slate-300 px-3 py-1.5 text-xs">
                       Page {pageNumber} of {pageCount}
                     </span>
                     <button
@@ -209,7 +190,7 @@ export default function ViewSlot({
                         setPageNumber((p) => Math.min(pageCount, p + 1))
                       }
                       disabled={pageNumber >= pageCount}
-                      className="px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 disabled:text-slate-300"
+                      className="px-3 py-1.5 text-xs hover:bg-slate-100 disabled:opacity-50"
                     >
                       Next
                     </button>
@@ -217,7 +198,57 @@ export default function ViewSlot({
                 </div>
               )}
 
-              <div className="mt-3 max-h-[70vh] overflow-auto rounded-sm border border-slate-300 bg-slate-200 p-3">
+              {pdfFile && (
+                <div className="mb-2 flex items-center justify-between rounded-md border border-slate-300 bg-slate-800 px-4 py-2 text-white">
+                  <span className="text-sm font-medium">PDF Zoom</span>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPdfScale((s) =>
+                          Math.max(0.5, Math.round((s - 0.25) * 100) / 100)
+                        )
+                      }
+                      disabled={pdfScale <= 0.5}
+                      className="rounded bg-slate-700 px-3 py-1 hover:bg-slate-600 disabled:opacity-40"
+                    >
+                      −
+                    </button>
+
+                    <span className="w-14 text-center text-sm font-semibold">
+                      {Math.round(pdfScale * 100)}%
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPdfScale((s) =>
+                          Math.min(3, Math.round((s + 0.25) * 100) / 100)
+                        )
+                      }
+                      disabled={pdfScale >= 3}
+                      className="rounded bg-slate-700 px-3 py-1 hover:bg-slate-600 disabled:opacity-40"
+                    >
+                      +
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPdfScale(1)}
+                      className="rounded border border-slate-500 px-3 py-1 text-xs hover:bg-slate-700"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* THE FIX: Fixed height, scrollable container */}
+              <div
+                ref={scrollContainerRef}
+                className="relative w-full h-[65vh] border border-slate-300 bg-slate-200 overflow-auto rounded-sm"
+              >
                 <div
                   ref={overlayRef}
                   className="relative inline-block select-none"
@@ -227,12 +258,11 @@ export default function ViewSlot({
                   onMouseUp={onMouseUp}
                   onMouseLeave={onMouseUp}
                 >
-                  {/* Render Image if we have one, otherwise PDF */}
-                  {localImageUrl || !pdfFile ? (
+                  {activeImageUrl && !pdfFile ? (
                     <img
-                      src={localImageUrl || activeImageUrl}
+                      src={activeImageUrl}
                       alt="Uploaded drawing"
-                      className="block max-w-full"
+                      className="block max-w-none"
                       ref={(el) => {
                         if (el) canvasRef.current = el;
                       }}
@@ -241,6 +271,7 @@ export default function ViewSlot({
                     <PdfViewer
                       pdfFile={pdfFile}
                       pageNumber={pageNumber}
+                      scale={pdfScale}
                       onPageRendered={(canvas) => {
                         canvasRef.current = canvas;
                       }}
@@ -285,21 +316,19 @@ export default function ViewSlot({
                 Waiting for a Source Document
               </p>
               <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
-                Upload a PDF in step 1, or click "Upload Image" above to provide
-                a specific screenshot for this view.
+                Upload a PDF in step 1, or click "Upload Image" above.
               </p>
             </div>
           )}
         </>
       )}
 
-      {/* Captured */}
       {capturedImage && (
-        <div className="mt-3">
+        <div className="mt-3 p-3 bg-slate-50 rounded border border-slate-200">
           <img
             src={capturedImage}
             alt={`View ${label}`}
-            className="max-h-64 rounded border border-slate-200"
+            className="max-h-64 object-contain"
           />
         </div>
       )}

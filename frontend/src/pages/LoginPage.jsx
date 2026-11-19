@@ -67,7 +67,8 @@ export default function LoginPage({ onLogin }) {
         setPassword(""); // Optional: clear password field for security
       } else {
         // Login successful
-        onLogin(data.username);
+        localStorage.setItem("user", JSON.stringify(data.user));
+        onLogin(data.user.username);
       }
     } catch (err) {
       setError(err.message);

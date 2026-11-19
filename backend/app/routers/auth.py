@@ -57,4 +57,10 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     
     # For a simple MVP, we just return the username. 
     # (In a production app, you'd return a JWT token here).
-    return {"message": "Login successful", "username": db_user.username}
+    return {
+        "message": "Login successful",
+        "user": {
+            "id": db_user.id,
+            "username": db_user.username
+        }
+    }
