@@ -64,7 +64,17 @@ export default function AnalysisPage({ project }) {
 
   const handleSave = async () => {
     if (!merged) return;
-    const user = JSON.parse(localStorage.getItem("user") || "null");
+
+    // Read the correct session key used by App.jsx
+    const savedUser = localStorage.getItem("rc_user");
+    let user = null;
+
+    try {
+      user = savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      // In case an old session stored only a username string
+      user = null;
+    }
 
     if (!user?.id) {
       alert("User session not found. Please log in again.");

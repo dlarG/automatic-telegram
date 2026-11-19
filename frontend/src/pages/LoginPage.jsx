@@ -1,7 +1,6 @@
 import { useState } from "react";
 
-/* Same theme as LandingPage. Edit the colors here (or move this object
-   into a shared theme file and import it in both pages). */
+/* Same theme as LandingPage */
 const THEME = {
   "--bp": "#0A2540",
   "--bp-deep": "#061729",
@@ -29,16 +28,29 @@ const GRID_DARK = {
 
 export default function LoginPage({ onLogin }) {
   const [isRegister, setIsRegister] = useState(false);
+
+  // Account credentials
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
 
-  // Separate states for error (red) and success (green)
+  // Personal information
+  const [firstName, setFirstName] = useState("");
+  const [middleInitial, setMiddleInitial] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [suffix, setSuffix] = useState("");
+  const [email, setEmail] = useState("");
+  const [birthdate, setBirthdate] = useState("");
+  const [gender, setGender] = useState("");
+
+  // UI states
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-
   const [loading, setLoading] = useState(false);
 
+  // -------------------------
+  // Form submission
+  // -------------------------
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -47,11 +59,30 @@ export default function LoginPage({ onLogin }) {
 
     const endpoint = isRegister ? "/api/auth/register" : "/api/auth/login";
 
+    const payload = isRegister
+      ? {
+          username: username.trim(),
+          password,
+          first_name: firstName.trim(),
+          middle_initial: middleInitial.trim() || null,
+          last_name: lastName.trim(),
+          suffix: suffix.trim() || null,
+          email: email.trim(),
+          birthdate: birthdate || null,
+          gender: gender || null,
+        }
+      : {
+          username: username.trim(),
+          password,
+        };
+
     try {
       const res = await fetch(`http://127.0.0.1:8000${endpoint}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -61,21 +92,39 @@ export default function LoginPage({ onLogin }) {
       }
 
       if (isRegister) {
-        // If register successful, switch to login and show success message
+        // Registration successful: return to login
         setIsRegister(false);
         setSuccess("Registration successful! Please log in.");
-        setPassword(""); // Optional: clear password field for security
+
+        // Clear form
+        setUsername("");
+        setPassword("");
+        setFirstName("");
+        setMiddleInitial("");
+        setLastName("");
+        setSuffix("");
+        setEmail("");
+        setBirthdate("");
+        setGender("");
       } else {
         // Login successful
-        localStorage.setItem("user", JSON.stringify(data.user));
-        onLogin(data.user.username);
+        onLogin(data.user);
       }
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Something went wrong.");
     } finally {
       setLoading(false);
     }
   };
+
+  // -------------------------
+  // Reusable input style
+  // -------------------------
+  const inputClass =
+    "mt-1 block w-full bg-transparent text-base text-[var(--ink)] placeholder-slate-400 focus:outline-none";
+
+  const labelClass =
+    "block bg-[var(--card)] px-4 py-3 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-600";
 
   return (
     <div
@@ -84,12 +133,12 @@ export default function LoginPage({ onLogin }) {
     >
       <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');`}</style>
 
-      {/* ---------- Mobile brand bar ---------- */}
+      {/* Mobile brand bar */}
       <div className="flex h-16 items-center bg-[var(--bp)] px-6 lg:hidden">
         <Brand />
       </div>
 
-      {/* ---------- Blueprint panel (desktop) ---------- */}
+      {/* Blueprint panel */}
       <aside
         className="relative hidden flex-col justify-between overflow-hidden bg-[var(--bp)] p-12 text-white lg:flex"
         style={GRID_DARK}
@@ -98,9 +147,11 @@ export default function LoginPage({ onLogin }) {
 
         <div>
           <SectionDrawing />
+
           <h2 className="mt-10 max-w-md text-3xl font-semibold leading-tight tracking-tight">
             Preliminary evidence screening for RC column plans
           </h2>
+
           <p className="mt-4 max-w-md leading-relaxed text-slate-300">
             Capture the views, extract the fields, and check them against NSCP
             2015 rules with auditable math.
@@ -115,25 +166,27 @@ export default function LoginPage({ onLogin }) {
         </p>
       </aside>
 
-      {/* ---------- Form ---------- */}
+      {/* Form panel */}
       <main className="flex items-center justify-center px-6 py-12 sm:px-10">
-        <div className="w-full max-w-sm">
+        <div className="w-full max-w-md">
           <p
             className="text-xs font-medium tracking-widest text-[var(--accent)]"
             style={{ fontFamily: FONT_MONO }}
           >
             {isRegister ? "REGISTER" : "SIGN IN"}
           </p>
+
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
             {isRegister ? "Create an account" : "Sign in"}
           </h1>
+
           <p className="mt-2 leading-relaxed text-[var(--muted)]">
             {isRegister
-              ? "Register to access the column screening system."
+              ? "Complete your account information to register for RC Screen."
               : "Enter your credentials to access the system."}
           </p>
 
-          {/* ERROR */}
+          {/* Error message */}
           {error && (
             <div
               role="alert"
@@ -143,7 +196,7 @@ export default function LoginPage({ onLogin }) {
             </div>
           )}
 
-          {/* SUCCESS */}
+          {/* Success message */}
           {success && (
             <div
               role="status"
@@ -156,26 +209,160 @@ export default function LoginPage({ onLogin }) {
           <form onSubmit={handleSubmit} className="mt-8">
             <div className="border-2 border-[var(--bp)] bg-[var(--rule)]">
               <div className="grid gap-px">
-                <label className="block bg-[var(--card)] px-4 py-3 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-600">
+                {/* ===================== */}
+                {/* PERSONAL INFORMATION */}
+                {/* ===================== */}
+                {isRegister && (
+                  <>
+                    <div className="bg-[var(--bp)] px-4 py-2 text-xs font-semibold tracking-widest text-white">
+                      PERSONAL INFORMATION
+                    </div>
+
+                    {/* First Name */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        First Name
+                      </span>
+                      <input
+                        type="text"
+                        required
+                        autoComplete="given-name"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        className={inputClass}
+                        placeholder="Juan"
+                      />
+                    </label>
+
+                    {/* Middle Initial */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        Middle Initial (Optional)
+                      </span>
+                      <input
+                        type="text"
+                        maxLength={5}
+                        value={middleInitial}
+                        onChange={(e) =>
+                          setMiddleInitial(e.target.value.toUpperCase())
+                        }
+                        className={inputClass}
+                        placeholder="D"
+                      />
+                    </label>
+
+                    {/* Last Name */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        Last Name
+                      </span>
+                      <input
+                        type="text"
+                        required
+                        autoComplete="family-name"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        className={inputClass}
+                        placeholder="Dela Cruz"
+                      />
+                    </label>
+
+                    {/* Suffix */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        Suffix (Optional)
+                      </span>
+                      <input
+                        type="text"
+                        value={suffix}
+                        onChange={(e) => setSuffix(e.target.value)}
+                        className={inputClass}
+                        placeholder="Jr., Sr., III"
+                      />
+                    </label>
+
+                    {/* Email */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        Email Address
+                      </span>
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        className={inputClass}
+                        placeholder="juan@example.com"
+                      />
+                    </label>
+
+                    {/* Birthdate */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        Birthdate (Optional)
+                      </span>
+                      <input
+                        type="date"
+                        value={birthdate}
+                        onChange={(e) => setBirthdate(e.target.value)}
+                        className={inputClass}
+                      />
+                    </label>
+
+                    {/* Gender */}
+                    <label className={labelClass}>
+                      <span className="block text-xs font-medium text-[var(--muted)]">
+                        Gender (Optional)
+                      </span>
+                      <select
+                        value={gender}
+                        onChange={(e) => setGender(e.target.value)}
+                        className={inputClass}
+                      >
+                        <option value="">Prefer not to say</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </label>
+                  </>
+                )}
+
+                {/* ===================== */}
+                {/* ACCOUNT CREDENTIALS */}
+                {/* Always visible for BOTH Register and Login */}
+                {/* ===================== */}
+                {isRegister && (
+                  <div className="bg-[var(--bp)] px-4 py-2 text-xs font-semibold tracking-widest text-white">
+                    ACCOUNT CREDENTIALS
+                  </div>
+                )}
+
+                {/* Username */}
+                <label className={labelClass}>
                   <span className="block text-xs font-medium text-[var(--muted)]">
                     Username
                   </span>
                   <input
                     type="text"
                     required
+                    minLength={3}
                     autoComplete="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="mt-1 block w-full bg-transparent text-base text-[var(--ink)] placeholder-slate-400 focus:outline-none"
+                    className={inputClass}
                     placeholder="engineer_juan"
                   />
                 </label>
 
-                <label className="block bg-[var(--card)] px-4 py-3 focus-within:ring-2 focus-within:ring-inset focus-within:ring-blue-600">
+                {/* Password */}
+                <label className={labelClass}>
                   <span className="flex items-center justify-between">
                     <span className="text-xs font-medium text-[var(--muted)]">
                       Password
                     </span>
+
                     <button
                       type="button"
                       onClick={() => setShowPassword((s) => !s)}
@@ -184,21 +371,26 @@ export default function LoginPage({ onLogin }) {
                       {showPassword ? "Hide" : "Show"}
                     </button>
                   </span>
+
                   <input
                     type={showPassword ? "text" : "password"}
                     required
+                    minLength={isRegister ? 8 : undefined}
                     autoComplete={
                       isRegister ? "new-password" : "current-password"
                     }
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="mt-1 block w-full bg-transparent text-base text-[var(--ink)] placeholder-slate-400 focus:outline-none"
-                    placeholder="••••••••"
+                    className={inputClass}
+                    placeholder={
+                      isRegister ? "At least 8 characters" : "••••••••"
+                    }
                   />
                 </label>
               </div>
             </div>
 
+            {/* Submit button */}
             <button
               type="submit"
               disabled={loading}
@@ -208,16 +400,18 @@ export default function LoginPage({ onLogin }) {
             </button>
           </form>
 
+          {/* Toggle Login/Register */}
           <p className="mt-8 border-t border-[var(--rule)] pt-6 text-sm text-[var(--muted)]">
             {isRegister
               ? "Already have an account? "
               : "Don't have an account? "}
+
             <button
               type="button"
               onClick={() => {
                 setIsRegister(!isRegister);
                 setError("");
-                setSuccess(""); // Clear success message when toggling
+                setSuccess("");
               }}
               className="font-semibold text-[var(--bp)] underline underline-offset-4 hover:text-[var(--ink)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--bp)]"
             >
@@ -230,6 +424,9 @@ export default function LoginPage({ onLogin }) {
   );
 }
 
+// =========================
+// Brand
+// =========================
 function Brand() {
   return (
     <div className="flex items-center gap-2.5">
@@ -268,6 +465,7 @@ function Brand() {
           />
         ))}
       </svg>
+
       <span className="text-base font-semibold tracking-tight text-white">
         RC Screen
       </span>
@@ -275,7 +473,9 @@ function Brand() {
   );
 }
 
-/* Smaller version of the landing-page section drawing */
+// =========================
+// Blueprint column drawing
+// =========================
 function SectionDrawing() {
   const bars = [
     [136, 136],
@@ -287,6 +487,7 @@ function SectionDrawing() {
     [210, 284],
     [284, 284],
   ];
+
   return (
     <svg
       viewBox="90 50 240 280"
@@ -300,12 +501,13 @@ function SectionDrawing() {
           id="login-concrete"
           width="10"
           height="10"
-          patternUnits="userSpaceOnUse"
+          patternUnits="userSpace"
         >
           <circle cx="2" cy="3" r="0.7" fill="var(--line)" opacity="0.35" />
           <circle cx="7" cy="8" r="0.7" fill="var(--line)" opacity="0.35" />
         </pattern>
       </defs>
+
       <rect
         x="110"
         y="110"
@@ -315,6 +517,7 @@ function SectionDrawing() {
         stroke="var(--line)"
         strokeWidth="2.5"
       />
+
       <rect
         x="122"
         y="122"
@@ -325,6 +528,7 @@ function SectionDrawing() {
         stroke="var(--line)"
         strokeWidth="1.5"
       />
+
       {bars.map(([cx, cy]) => (
         <circle
           key={`${cx}-${cy}`}
@@ -334,6 +538,7 @@ function SectionDrawing() {
           fill="var(--accent)"
         />
       ))}
+
       <g stroke="var(--line)" strokeWidth="1" fill="none">
         <line x1="110" y1="104" x2="110" y2="72" />
         <line x1="310" y1="104" x2="310" y2="72" />
@@ -341,6 +546,7 @@ function SectionDrawing() {
         <line x1="105" y1="85" x2="115" y2="75" />
         <line x1="305" y1="85" x2="315" y2="75" />
       </g>
+
       <text x="210" y="68" textAnchor="middle" fontSize="13" fill="var(--line)">
         400
       </text>

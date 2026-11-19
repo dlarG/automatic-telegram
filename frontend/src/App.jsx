@@ -89,6 +89,7 @@ function LogoMark() {
 
 function AppShell() {
   const [project, setProject] = useState(EMPTY_PROJECT);
+
   const [user, setUser] = useState(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -96,20 +97,31 @@ function AppShell() {
   // Check for logged-in user on mount
   useEffect(() => {
     const savedUser = localStorage.getItem("rc_user");
+
     if (savedUser) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUser(savedUser);
+      try {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setUser(JSON.parse(savedUser));
+      } catch {
+        // Handles older versions where only the username was saved
+        setUser({ username: savedUser });
+      }
     }
   }, []);
 
-  const handleLogin = (username) => {
-    setUser(username);
-    localStorage.setItem("rc_user", username);
+  const handleLogin = (userData) => {
+    setUser(userData);
+    localStorage.setItem("rc_user", JSON.stringify(userData));
+
+    // Redirect immediately after successful login
+    navigate("/dashboard", { replace: true });
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem("rc_user");
+    localStorage.removeItem("user");
+    navigate("/login");
   };
 
   // If not logged in, show the login screen (except on the landing page)
@@ -155,7 +167,9 @@ function AppShell() {
                 className="whitespace-nowrap text-sm font-medium text-slate-300 hover:text-white focus:outline-none focus-visible:underline"
               >
                 Log out
-                <span className="hidden sm:inline"> ({user})</span>
+                <span className="hidden sm:inline">
+                  ({user?.first_name || user?.username} {user?.last_name})
+                </span>
               </button>
             </div>
           </div>
