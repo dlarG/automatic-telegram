@@ -67,6 +67,7 @@ export default function AnalysisPage({ project }) {
 
     // Read the correct session key used by App.jsx
     const savedUser = localStorage.getItem("rc_user");
+    // eslint-disable-next-line no-useless-assignment
     let user = null;
 
     try {

@@ -1,5 +1,58 @@
 import math
 
+
+def check_drawing_readability(view_texts: dict, threshold: int = 10) -> dict:
+    """
+    Check if combined OCR text from Views A, B, and C
+    reaches the minimum readability threshold.
+
+    Counts letters and digits only.
+    """
+    rule_id = "OCR-READABILITY-01"
+    label = "Drawing Readability (Combined OCR Coverage)"
+
+    # Safely retrieve text from all three selected views
+    view_a = view_texts.get("A") or ""
+    view_b = view_texts.get("B") or ""
+    view_c = view_texts.get("C") or ""
+
+    # Count readable alphanumeric characters only
+    count_a = sum(char.isalnum() for char in view_a)
+    count_b = sum(char.isalnum() for char in view_b)
+    count_c = sum(char.isalnum() for char in view_c)
+
+    total_characters = count_a + count_b + count_c
+
+    if total_characters < threshold:
+        status = "UNREADABLE"
+        message = (
+            f"Combined OCR text is insufficient "
+            f"({total_characters}/{threshold} characters). "
+            "The selected drawing views may be unreadable "
+            "or OCR extraction may have failed."
+        )
+    else:
+        status = "READABLE"
+        message = (
+            f"Combined OCR text reached the readability threshold "
+            f"({total_characters} characters)."
+        )
+
+    return {
+        "rule_id": rule_id,
+        "label": label,
+        "status": status,
+        "message": message,
+        "details": {
+            "view_a_characters": count_a,
+            "view_b_characters": count_b,
+            "view_c_characters": count_c,
+            "total_characters": total_characters,
+            "minimum_threshold": threshold
+        }
+    }
+
+
 def check_rebar_ratio(merged_fields: dict) -> dict:
     """
     Check if the longitudinal reinforcement ratio is within 1% to 6% of the gross area.
@@ -28,6 +81,7 @@ def check_rebar_ratio(merged_fields: dict) -> dict:
             "message": f"Missing inputs for calculation: {', '.join(missing)}",
             "details": {}
         }
+    
 
     # 2. Calculate
     gross_area = width * depth
@@ -347,10 +401,11 @@ def check_lateral_tie_support(merged_fields: dict) -> dict:
         }
     }
 
-def run_all_rules(merged_fields: dict) -> list:
-    """Run all validated rules and return a list of results."""
+def run_all_rules(merged_fields: dict, view_texts: dict = None) -> list:
+    """Run all screening rules and return a list of results."""
+
     results = []
-    
+
     # Rule 1: Rebar Ratio
     results.append(check_rebar_ratio(merged_fields))
 
@@ -362,11 +417,14 @@ def run_all_rules(merged_fields: dict) -> list:
 
     # Rule 4: Tie Spacing
     results.append(check_tie_spacing(merged_fields))
-    
-    # Rule 5: Clear Spacing (NEW)
+
+    # Rule 5: Clear Spacing
     results.append(check_clear_spacing(merged_fields))
-    
-    # Rule 6: Lateral Support (NEW)
+
+    # Rule 6: Lateral Support
     results.append(check_lateral_tie_support(merged_fields))
-    
+
+    # Rule 7: Drawing Readability
+    results.append(check_drawing_readability(view_texts or {}))
+
     return results
