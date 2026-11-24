@@ -10,32 +10,60 @@ import {
   saveAnalysisRun,
 } from "../services/api";
 
-/* Builds and downloads the plain-text screening report. */
-function downloadReport(project, merged) {
-  let report = `RC COLUMN SCREENING REPORT\n`;
-  report += `===========================\n\n`;
-  report += `Project: ${project?.title || "Unknown"}\n`;
-  report += `Column Mark: ${merged.column_mark}\n`;
-  report += `Dimensions: ${merged.width_mm} x ${merged.depth_mm} mm\n`;
-  report += `Main Bars: ${merged.bar_count} - ${merged.bar_diameter_mm}mm\n`;
-  report += `Ties: ${merged.tie_diameter_mm}mm @ ${merged.tie_spacing_mm}mm\n\n`;
+async function downloadReport(project, merged) {
+  try {
+    const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-  report += `ENGINEERING CHECKS (NSCP 2015)\n`;
-  report += `-----------------------------\n`;
-  merged.rule_results?.forEach((rule) => {
-    report += `[${rule.status}] ${rule.label}\n`;
-    report += `   ${rule.message}\n\n`;
-  });
+    const response = await fetch(`${API_URL}/api/reports/generate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        project,
+        merged,
+      }),
+    });
 
-  report += `Disclaimer: This is a preliminary automated screening only. It does not replace professional engineering judgment.`;
+    if (!response.ok) {
+      let errorMessage = "Failed to generate PDF report.";
 
-  const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `Screening_Report_${merged.column_mark || "Column"}.txt`;
-  a.click();
-  URL.revokeObjectURL(url);
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.detail || errorMessage;
+      } catch {
+        // Keep the default error message.
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    const blob = await response.blob();
+
+    const contentDisposition = response.headers.get("Content-Disposition");
+
+    const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
+
+    const filename =
+      filenameMatch?.[1] ||
+      `RC_Screening_Report_${merged.column_mark || "Column"}.pdf`;
+
+    const url = window.URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+
+    document.body.appendChild(link);
+    link.click();
+
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error("PDF export error:", error);
+
+    alert(error.message || "Unable to generate the PDF report.");
+  }
 }
 
 export default function AnalysisPage({ project }) {
@@ -380,6 +408,7 @@ function ActionStep({
 }
 
 /* Step 6: result summary, save to database, download report */
+
 function ExportStep({ merged, saving, saved, saveError, onSave, onDownload }) {
   const rules = merged.rule_results || [];
   const count = (status) => rules.filter((r) => r.status === status).length;
@@ -399,7 +428,7 @@ function ExportStep({ merged, saving, saved, saveError, onSave, onDownload }) {
       <StepHeader
         step={6}
         title="Save and export"
-        hint="Store this run in the database, then download the screening report."
+        hint="Store this run in the database or generate a PDF screening report."
       />
 
       {rules.length > 0 && (
@@ -417,16 +446,18 @@ function ExportStep({ merged, saving, saved, saveError, onSave, onDownload }) {
       )}
 
       <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* Save Analysis */}
         <div className="flex flex-col justify-between gap-4 border border-slate-200 p-4">
           <div>
             <h4 className="text-sm font-semibold text-slate-900">
               Save analysis
             </h4>
             <p className="mt-1 text-sm leading-snug text-slate-600">
-              Saves the project, column identity, merged fields and check
+              Saves the project, column identity, merged fields and screening
               results to the database.
             </p>
           </div>
+
           <button
             onClick={onSave}
             disabled={saving || saved}
@@ -444,21 +475,25 @@ function ExportStep({ merged, saving, saved, saveError, onSave, onDownload }) {
           </button>
         </div>
 
+        {/* Generate PDF */}
         <div className="flex flex-col justify-between gap-4 border border-slate-200 p-4">
           <div>
             <h4 className="text-sm font-semibold text-slate-900">
-              Download report
+              Generate PDF report
             </h4>
             <p className="mt-1 text-sm leading-snug text-slate-600">
-              A plain-text report with the column, its dimensions and each NSCP
-              2015 check.
+              Generate a formatted engineering screening report containing
+              project information, NSCP checks, calculation details,
+              recommendations and assumptions.
             </p>
           </div>
+
           <button
             onClick={onDownload}
-            className="self-start rounded border border-slate-800 bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-800 focus-visible:ring-offset-2"
+            disabled={rules.length === 0}
+            className="self-start rounded bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-700 focus-visible:ring-offset-2"
           >
-            Download report
+            Download PDF report
           </button>
         </div>
       </div>
@@ -471,6 +506,7 @@ function ExportStep({ merged, saving, saved, saveError, onSave, onDownload }) {
           {saveError}
         </p>
       )}
+
       {saved && (
         <p
           role="status"
