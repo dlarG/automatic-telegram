@@ -151,22 +151,30 @@ export default function AnalysisPage({ project }) {
       setMergeError("Run extraction first.");
       return;
     }
+
     setMerging(true);
     setMergeError("");
+
     try {
-      // Build the views payload from whatever extraction results exist
       const views = {};
+
       for (const key of ["A", "B", "C"]) {
-        if (extraction[key]?.extracted_fields) {
-          views[key] = { extracted_fields: extraction[key].extracted_fields };
+        if (extraction[key]) {
+          views[key] = {
+            extracted_fields: extraction[key].extracted_fields || {},
+            raw_text: extraction[key].raw_text || "",
+          };
         }
       }
+
       const caseId = `${project.projectId || "P001"}-${
         identity.columnMark || "C1"
       }`;
+
       const result = await mergeViews(caseId, views);
+
       setMerged(result);
-      setSaved(false); // a new merge result can be saved again
+      setSaved(false);
       setSaveError("");
     } catch (e) {
       setMergeError(e.message || "Merge failed.");
@@ -534,7 +542,15 @@ function MergedResultCard({ merged }) {
           </p>
         </div>
         <span className="rounded-sm border border-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-900">
-          Confidence: {merged.merge_confidence}
+          Weighted field coverage:{" "}
+          {(
+            (merged.merge_completeness ?? merged.merge_confidence ?? 0) * 100
+          ).toFixed(0)}
+          %
+          <p className="text-xs text-gray-500">
+            Measures the weighted coverage of populated structural fields. It
+            does not guarantee the correctness of extracted values.
+          </p>
         </span>
       </div>
 
@@ -783,7 +799,10 @@ function ExtractionResults({ extraction }) {
                 ["Bar diameter (mm)", data.extracted_fields?.bar_diameter_mm],
                 ["Tie diameter (mm)", data.extracted_fields?.tie_diameter_mm],
                 ["Tie spacing (mm)", data.extracted_fields?.tie_spacing_mm],
-                ["Parse confidence", data.extracted_fields?.parse_confidence],
+                [
+                  "Extraction completeness",
+                  data.extracted_fields?.extraction_completeness,
+                ],
               ]}
             />
           </div>

@@ -238,29 +238,36 @@ def extract_zone_spacing(text: str) -> list:
 # Top-level parse
 # ---------------------------------------------------------------------------
 
+
+# Expected fields depend on the responsibility of each drawing view.
+VIEW_EXPECTED_FIELDS = {
+    "A": ["column_mark"],
+    "B": [
+        "column_mark",
+        "width_mm",
+        "depth_mm",
+        "bar_count",
+        "bar_diameter_mm",
+        "tie_diameter_mm",
+        "tie_spacing_mm",
+    ],
+    "C": [
+        "tie_diameter_mm",
+        "tie_spacing_mm",
+        "zone_spacings",
+    ],
+}
+
+
 def parse_fields(raw_text: str, source_view: str = "unknown") -> dict:
     """
-    Parse structured fields from raw text.
+    Extract structural fields and calculate view-specific
+    extraction completeness.
 
-    Parameters
-    ----------
-    raw_text : str
-        Text from PDF extraction or OCR.
-    source_view : str
-        One of 'A' (locator), 'B' (schedule), 'C' (detail). Used for warnings.
-
-    Returns
-    -------
-    dict with keys:
-      - column_mark: str | None
-      - width_mm, depth_mm: int | None
-      - bar_count, bar_diameter_mm: int | None
-      - tie_diameter_mm, tie_spacing_mm: int | None
-      - zone_spacings: list
-      - parse_confidence: float (0.0–1.0)
-      - parse_warnings: list of str
-      - source_view: str
+    Extraction completeness measures field coverage.
+    It does NOT measure the correctness of extracted values.
     """
+
     if not raw_text or not raw_text.strip():
         return {
             "column_mark": None,
@@ -271,12 +278,16 @@ def parse_fields(raw_text: str, source_view: str = "unknown") -> dict:
             "tie_diameter_mm": None,
             "tie_spacing_mm": None,
             "zone_spacings": [],
-            "parse_confidence": 0.0,
+            "extraction_completeness": 0.0,
+            "parse_confidence": 0.0,  # Legacy compatibility
+            "expected_fields": VIEW_EXPECTED_FIELDS.get(source_view, []),
+            "found_fields": [],
             "parse_warnings": ["No text supplied to parser."],
             "source_view": source_view,
         }
 
     warnings = []
+
     result = {
         "column_mark": extract_column_mark(raw_text),
         "zone_spacings": extract_zone_spacing(raw_text),
@@ -294,29 +305,64 @@ def parse_fields(raw_text: str, source_view: str = "unknown") -> dict:
     ties = extract_tie_info(raw_text)
     result["tie_diameter_mm"] = ties.get("tie_diameter_mm")
     result["tie_spacing_mm"] = ties.get("tie_spacing_mm")
+
     if ties.get("tie_spacing_note"):
         warnings.append(ties["tie_spacing_note"])
 
-    # Count how many primary fields we got
-    primary_fields = [
-        result["column_mark"],
-        result["width_mm"],
-        result["depth_mm"],
-        result["bar_count"],
-        result["bar_diameter_mm"],
-        result["tie_diameter_mm"],
-    ]
-    found = sum(1 for v in primary_fields if v is not None)
-    result["parse_confidence"] = round(found / len(primary_fields), 2)
+    # Determine which fields are expected for this view.
+    expected_fields = VIEW_EXPECTED_FIELDS.get(
+        source_view,
+        [
+            "column_mark",
+            "width_mm",
+            "depth_mm",
+            "bar_count",
+            "bar_diameter_mm",
+            "tie_diameter_mm",
+        ],
+    )
 
+    # A non-empty list counts as an extracted field.
+    found_fields = []
+
+    for field in expected_fields:
+        value = result.get(field)
+
+        if value is not None and value != []:
+            found_fields.append(field)
+
+    # Calculate extraction completeness.
+    total_expected = len(expected_fields)
+
+    extraction_completeness = (
+        round(len(found_fields) / total_expected, 2)
+        if total_expected else 0.0
+    )
+
+    result["expected_fields"] = expected_fields
+    result["found_fields"] = found_fields
+    result["extraction_completeness"] = extraction_completeness
+
+    # Keep the old key temporarily so existing frontend code
+    # and other backend components do not break.
+    result["parse_confidence"] = extraction_completeness
+
+    # Extraction warnings.
     if result["column_mark"] is None:
         warnings.append("Column mark not found.")
+
     if result["width_mm"] is None or result["depth_mm"] is None:
         warnings.append("Width/depth not found or ambiguous.")
+
     if result["bar_count"] is None or result["bar_diameter_mm"] is None:
         warnings.append("Longitudinal bar callout not parsed.")
+
     if result["tie_diameter_mm"] is None:
         warnings.append("Tie diameter not found.")
 
+    if result["tie_spacing_mm"] is None and not result["zone_spacings"]:
+        warnings.append("Tie spacing or zone spacing not found.")
+
     result["parse_warnings"] = warnings
+
     return result

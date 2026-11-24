@@ -160,6 +160,12 @@ def merge_view_results(case_id: str, views: dict) -> dict:
 
     # --- Confidence ---
     # Weighted by importance: schedule fields matter most.
+    
+    # --- Weighted merged field coverage ---
+    #
+    # This measures how many weighted fields have values.
+    # It does NOT measure whether those values are correct.
+
     WEIGHTS = {
         "column_mark": 2.0,
         "width_mm": 1.0,
@@ -169,16 +175,19 @@ def merge_view_results(case_id: str, views: dict) -> dict:
         "tie_diameter_mm": 0.5,
         "tie_spacing_mm": 0.5,
     }
+
     total_weight = sum(WEIGHTS.values())
-    achieved = 0.0
+    achieved_weight = 0.0
+
     for field, weight in WEIGHTS.items():
         if merged.get(field) is not None:
-            achieved += weight
-        elif any(c["field"] == field for c in conflicts):
-            # Conflicts do not count as achieved but are surfaced separately
-            pass
+            achieved_weight += weight
 
-    merge_confidence = round(achieved / total_weight, 2) if total_weight else 0.0
+    merge_completeness = (
+        round(achieved_weight / total_weight, 2)
+        if total_weight else 0.0
+    )
+
 
     return {
         "case_id": case_id,
@@ -192,6 +201,12 @@ def merge_view_results(case_id: str, views: dict) -> dict:
         "zone_spacings": zone_spacings,
         "field_provenance": provenance,
         "conflicts": conflicts,
-        "merge_confidence": merge_confidence,
+        "merge_confidence": merge_completeness,
         "merge_warnings": warnings,
+        "merge_score_description": (
+            "Weighted coverage of populated structural fields. "
+            "This score does not establish the correctness of extracted values."
+        ),
+        "merge_achieved_weight": achieved_weight,
+        "merge_total_weight": total_weight,
     }
