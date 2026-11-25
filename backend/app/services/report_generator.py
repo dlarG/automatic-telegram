@@ -511,9 +511,6 @@ def generate_screening_pdf(project: dict, merged: dict) -> BytesIO:
         story.append(Spacer(1, 2 * mm))
         story.append(ocr_table)
 
-    # -----------------------------------------------------
-    # MERGE WARNINGS AND FIELD PROVENANCE
-    # -----------------------------------------------------
 
     
     # -----------------------------------------------------

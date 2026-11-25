@@ -62,3 +62,31 @@ export async function deleteHistoryRun(id) {
   if (!res.ok) throw new Error("Failed to delete run");
   return res.json();
 }
+
+export async function reanalyzeFields(mergedFields, viewTexts = {}) {
+  const res = await fetch(`${BASE_URL}/api/reanalyze`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      merged_fields: mergedFields,
+      view_texts: viewTexts,
+    }),
+  });
+
+  if (!res.ok) {
+    let message = "Failed to re-analyze fields.";
+
+    try {
+      const error = await res.json();
+      message = error.detail || message;
+    } catch {
+      // Use default error message
+    }
+
+    throw new Error(message);
+  }
+
+  return res.json();
+}

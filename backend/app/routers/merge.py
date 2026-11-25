@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
+import math
 
 from app.services.rule_engine import run_all_rules
 from app.services.view_merger import merge_view_results
@@ -17,6 +18,10 @@ class ViewPayload(BaseModel):
 class MergeRequest(BaseModel):
     case_id: str
     views: Dict[str, ViewPayload]
+
+class ReanalyzeRequest(BaseModel):
+    merged_fields: Dict[str, Any]
+    view_texts: Optional[Dict[str, str]] = None
 
 
 @router.post("/merge")
@@ -74,3 +79,82 @@ async def merge_views(payload: MergeRequest):
     print("=====================================\n")
 
     return merged_result
+
+@router.post("/reanalyze")
+async def reanalyze_fields(payload: ReanalyzeRequest):
+    """
+    Re-run engineering screening rules using manually corrected
+    or updated merged fields.
+
+    Original OCR text is retained for the readability check.
+    """
+
+    merged_fields = dict(payload.merged_fields)
+
+    # Fields that must contain numeric values
+    numeric_fields = [
+        "width_mm",
+        "depth_mm",
+        "bar_count",
+        "bar_diameter_mm",
+        "tie_diameter_mm",
+        "tie_spacing_mm",
+    ]
+
+    for field in numeric_fields:
+        value = merged_fields.get(field)
+
+        # Allow missing or empty values so the rules can report
+        # INSUFFICIENT_DOCUMENT_COVERAGE.
+        if value is None or value == "":
+            merged_fields[field] = None
+            continue
+
+        if isinstance(value, bool):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{field} must be a valid number."
+            )
+
+        try:
+            number = float(value)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{field} must be a valid number."
+            )
+
+        if not math.isfinite(number) or number <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{field} must be greater than zero."
+            )
+
+        if field == "bar_count":
+            if not number.is_integer():
+                raise HTTPException(
+                    status_code=422,
+                    detail="bar_count must be a whole number."
+                )
+            merged_fields[field] = int(number)
+        else:
+            merged_fields[field] = number
+
+    # Validate the column mark
+    column_mark = merged_fields.get("column_mark")
+
+    if column_mark is not None:
+        merged_fields["column_mark"] = str(column_mark).strip() or None
+
+    # Re-run all engineering rules.
+    # Pass the original OCR text so manual corrections do not
+    # artificially change the drawing readability result.
+    rule_results = run_all_rules(
+        merged_fields=merged_fields,
+        view_texts=payload.view_texts or {}
+    )
+
+    return {
+        "merged_fields": merged_fields,
+        "rule_results": rule_results
+    }

@@ -8,6 +8,7 @@ import {
   extractFromFile,
   mergeViews,
   saveAnalysisRun,
+  reanalyzeFields,
 } from "../services/api";
 
 async function downloadReport(project, merged) {
@@ -352,7 +353,17 @@ export default function AnalysisPage({ project }) {
         />
       )}
 
-      {merged && <MergedResultCard merged={merged} />}
+      {merged && (
+        <MergedResultCard
+          merged={merged}
+          extraction={extraction}
+          onMergedUpdate={(updated) => {
+            setMerged(updated);
+            setSaved(false);
+            setSaveError("");
+          }}
+        />
+      )}
 
       {merged && (
         <ExportStep
@@ -555,7 +566,198 @@ const STATUS_STYLES = {
   INSUFFICIENT_DOCUMENT_COVERAGE: "border-amber-500 bg-amber-50 text-amber-900",
 };
 
-function MergedResultCard({ merged }) {
+function MergedResultCard({ merged, extraction, onMergedUpdate }) {
+  const [editing, setEditing] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editSuccess, setEditSuccess] = useState("");
+
+  const createDraft = (data) => ({
+    column_mark: data.column_mark ?? "",
+    width_mm: data.width_mm ?? "",
+    depth_mm: data.depth_mm ?? "",
+    bar_count: data.bar_count ?? "",
+    bar_diameter_mm: data.bar_diameter_mm ?? "",
+    tie_diameter_mm: data.tie_diameter_mm ?? "",
+    tie_spacing_mm: data.tie_spacing_mm ?? "",
+    zone_spacings: (data.zone_spacings || [])
+      .map((z) => z.spacing_mm)
+      .join(", "),
+  });
+
+  const [draft, setDraft] = useState(() => createDraft(merged));
+
+  useEffect(() => {
+    setDraft(createDraft(merged));
+  }, [merged]);
+
+  const updateDraft = (field, value) => {
+    setDraft((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  };
+
+  const cancelEditing = () => {
+    setDraft(createDraft(merged));
+    setEditing(false);
+    setEditError("");
+    setEditSuccess("");
+  };
+
+  const handleReanalyze = async () => {
+    setEditError("");
+    setEditSuccess("");
+
+    // Convert numeric inputs and validate them before sending.
+    const numericFields = [
+      "width_mm",
+      "depth_mm",
+      "bar_count",
+      "bar_diameter_mm",
+      "tie_diameter_mm",
+      "tie_spacing_mm",
+    ];
+
+    const updatedFields = {};
+
+    for (const field of numericFields) {
+      const rawValue = draft[field];
+
+      if (rawValue === "") {
+        updatedFields[field] = null;
+        continue;
+      }
+
+      const number = Number(rawValue);
+
+      if (!Number.isFinite(number) || number <= 0) {
+        setEditError(`${field.replace(/_/g, " ")} must be a positive number.`);
+        return;
+      }
+
+      if (field === "bar_count" && !Number.isInteger(number)) {
+        setEditError("Bar count must be a whole number.");
+        return;
+      }
+
+      updatedFields[field] = number;
+    }
+
+    // Validate and convert the column mark.
+    updatedFields.column_mark = draft.column_mark.trim() || null;
+
+    // Convert comma-separated zone spacings into the structure
+    // expected by the existing tie-spacing rule.
+    let updatedZones = [];
+
+    if (draft.zone_spacings.trim()) {
+      const spacingValues = draft.zone_spacings
+        .split(",")
+        .map((value) => value.trim());
+
+      for (const value of spacingValues) {
+        const number = Number(value);
+
+        if (!Number.isFinite(number) || number <= 0) {
+          setEditError(
+            "Zone spacings must contain only positive numbers separated by commas."
+          );
+          return;
+        }
+
+        updatedZones.push(number);
+      }
+
+      updatedZones = updatedZones.map((spacing, index) => ({
+        zone: `Manual ${index + 1}`,
+        spacing_mm: spacing,
+      }));
+    }
+
+    updatedFields.zone_spacings = updatedZones;
+
+    // Keep the original OCR text for the readability check.
+    const viewTexts = {
+      A: extraction?.A?.raw_text || "",
+      B: extraction?.B?.raw_text || "",
+      C: extraction?.C?.raw_text || "",
+    };
+
+    // Identify fields that have actually changed.
+    const fieldsToTrack = ["column_mark", ...numericFields, "zone_spacings"];
+
+    const changedFields = fieldsToTrack.filter((field) => {
+      if (field === "zone_spacings") {
+        const oldValues = (merged.zone_spacings || []).map((z) =>
+          Number(z.spacing_mm)
+        );
+        const newValues = updatedZones.map((z) => Number(z.spacing_mm));
+
+        return JSON.stringify(oldValues) !== JSON.stringify(newValues);
+      }
+
+      const oldValue = merged[field] ?? null;
+      const newValue = updatedFields[field] ?? null;
+
+      if (field === "column_mark") {
+        return String(oldValue || "") !== String(newValue || "");
+      }
+
+      if (oldValue === null && newValue === null) return false;
+
+      return Number(oldValue) !== Number(newValue);
+    });
+
+    setReanalyzing(true);
+
+    try {
+      const response = await reanalyzeFields(updatedFields, viewTexts);
+
+      // Preserve original provenance and identify manual corrections.
+      const updatedProvenance = {
+        ...(merged.field_provenance || {}),
+      };
+
+      const manualOverrides = {
+        ...(merged.manual_overrides || {}),
+      };
+
+      for (const field of changedFields) {
+        updatedProvenance[field] = "MANUAL";
+
+        manualOverrides[field] = {
+          original_value:
+            merged[field] ??
+            (field === "zone_spacings" ? merged.zone_spacings || [] : null),
+          manual_value:
+            field === "zone_spacings" ? updatedZones : updatedFields[field],
+        };
+      }
+
+      // Build the complete updated result while retaining merge metadata.
+      const updatedMerged = {
+        ...merged,
+        ...response.merged_fields,
+        field_provenance: updatedProvenance,
+        manual_overrides: manualOverrides,
+        rule_results: response.rule_results,
+      };
+
+      onMergedUpdate(updatedMerged);
+
+      setDraft(createDraft(updatedMerged));
+      setEditing(false);
+      setEditSuccess(
+        "Fields updated and engineering checks recalculated successfully."
+      );
+    } catch (error) {
+      setEditError(error.message || "Unable to re-analyze the updated fields.");
+    } finally {
+      setReanalyzing(false);
+    }
+  };
+
   const fields = [
     ["Column mark", merged.column_mark],
     ["Width (mm)", merged.width_mm],
@@ -566,8 +768,31 @@ function MergedResultCard({ merged }) {
     ["Tie spacing (mm)", merged.tie_spacing_mm],
   ];
 
+  const editableFields = [
+    { key: "column_mark", label: "Column mark", type: "text" },
+    { key: "width_mm", label: "Width (mm)", type: "number" },
+    { key: "depth_mm", label: "Depth (mm)", type: "number" },
+    { key: "bar_count", label: "Bar count", type: "number", step: "1" },
+    {
+      key: "bar_diameter_mm",
+      label: "Bar diameter (mm)",
+      type: "number",
+    },
+    {
+      key: "tie_diameter_mm",
+      label: "Tie diameter (mm)",
+      type: "number",
+    },
+    {
+      key: "tie_spacing_mm",
+      label: "General tie spacing (mm)",
+      type: "number",
+    },
+  ];
+
   return (
     <section className="rounded-md border border-slate-200 bg-white p-5">
+      {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-base font-semibold text-slate-900">
@@ -577,23 +802,164 @@ function MergedResultCard({ merged }) {
             Confirmed values, with the source view recorded for each field.
           </p>
         </div>
-        <span className="rounded-sm border border-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-900">
-          Weighted field coverage:{" "}
-          {(
-            (merged.merge_completeness ?? merged.merge_confidence ?? 0) * 100
-          ).toFixed(0)}
-          %
-          <p className="text-xs text-gray-500">
-            Measures the weighted coverage of populated structural fields. It
-            does not guarantee the correctness of extracted values.
-          </p>
-        </span>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-sm border border-slate-800 px-2.5 py-1 text-xs font-semibold text-slate-900">
+            Weighted field coverage:{" "}
+            {(
+              (merged.merge_completeness ?? merged.merge_confidence ?? 0) * 100
+            ).toFixed(0)}
+            %
+          </span>
+
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(createDraft(merged));
+                setEditing(true);
+                setEditError("");
+                setEditSuccess("");
+              }}
+              className="rounded bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900"
+            >
+              Edit Fields
+            </button>
+          )}
+        </div>
       </div>
 
+      <p className="mt-2 text-xs text-slate-500">
+        Weighted coverage measures populated structural fields. It does not
+        guarantee the correctness of extracted values.
+      </p>
+
+      {/* Edit form */}
+      {editing && (
+        <div className="mt-5 rounded-md border border-blue-200 bg-blue-50 p-4">
+          <div>
+            <h4 className="text-sm font-semibold text-slate-900">
+              Correct or supply structural fields
+            </h4>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              Enter the values shown in the structural drawing. Leave a field
+              blank if its value is unknown. Re-analysis will use these values
+              to recalculate the engineering checks.
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {editableFields.map((field) => (
+              <label key={field.key} className="block">
+                <span className="mb-1 block text-xs font-semibold text-slate-700">
+                  {field.label}
+                </span>
+                <input
+                  type={field.type}
+                  step={field.step || "any"}
+                  min={field.type === "number" ? "0" : undefined}
+                  value={draft[field.key]}
+                  onChange={(event) =>
+                    updateDraft(field.key, event.target.value)
+                  }
+                  placeholder={`Enter ${field.label.toLowerCase()}`}
+                  className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                />
+              </label>
+            ))}
+          </div>
+
+          {/* Zone spacing editor */}
+          <div className="mt-4">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-slate-700">
+                Zone spacings (mm)
+              </span>
+              <input
+                type="text"
+                value={draft.zone_spacings}
+                onChange={(event) =>
+                  updateDraft("zone_spacings", event.target.value)
+                }
+                placeholder="Example: 50, 100, 150"
+                className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+              />
+              <span className="mt-1 block text-xs text-slate-500">
+                Enter comma-separated spacing values. These are used by the
+                tie-spacing check instead of general tie spacing when supplied.
+                Leave blank to use general tie spacing.
+              </span>
+            </label>
+          </div>
+
+          {editError && (
+            <p
+              role="alert"
+              className="mt-4 border-l-2 border-red-600 bg-red-50 px-3 py-2 text-sm text-red-800"
+            >
+              {editError}
+            </p>
+          )}
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={handleReanalyze}
+              disabled={reanalyzing}
+              className="rounded bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {reanalyzing
+                ? "Re-analyzing..."
+                : "Save Corrections & Re-analyze"}
+            </button>
+
+            <button
+              type="button"
+              onClick={cancelEditing}
+              disabled={reanalyzing}
+              className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {editSuccess && (
+        <p
+          role="status"
+          className="mt-4 border-l-2 border-green-600 bg-green-50 px-3 py-2 text-sm text-green-900"
+        >
+          {editSuccess}
+        </p>
+      )}
+
+      {/* Merged fields */}
       <div className="mt-4">
         <FieldGrid fields={fields} />
       </div>
+      {Object.entries(merged.field_provenance || {}).some(
+        ([, source]) => source === "MANUAL"
+      ) && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">
+            Manually supplied:
+          </span>
 
+          {Object.entries(merged.field_provenance || {})
+            .filter(([, source]) => source === "MANUAL")
+            .map(([field]) => (
+              <span
+                key={field}
+                className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800"
+              >
+                {field.replace(/_/g, " ")} · MANUAL
+              </span>
+            ))}
+        </div>
+      )}
+
+      {/* Zone spacings */}
       {merged.zone_spacings?.length > 0 && (
         <div className="mt-5">
           <h4 className="text-sm font-semibold text-slate-900">
@@ -605,9 +971,10 @@ function MergedResultCard({ merged }) {
                 key={i}
                 className="flex items-center justify-between py-2 text-sm text-slate-700"
               >
-                <span>Zone {z.zone}</span>
+                <span>Zone {z.zone || i + 1}</span>
                 <span className="font-medium text-slate-900">
-                  {z.spacing_mm} mm{z.count ? ` (x${z.count})` : ""}
+                  {z.spacing_mm} mm
+                  {z.count ? ` (x${z.count})` : ""}
                 </span>
               </li>
             ))}
@@ -615,6 +982,7 @@ function MergedResultCard({ merged }) {
         </div>
       )}
 
+      {/* Conflicts */}
       {merged.conflicts?.length > 0 && (
         <div className="mt-5 border-l-2 border-red-600 bg-red-50 px-4 py-3">
           <h4 className="text-sm font-semibold text-red-900">Conflicts</h4>
@@ -626,9 +994,12 @@ function MergedResultCard({ merged }) {
         </div>
       )}
 
+      {/* Warnings */}
       {merged.merge_warnings?.length > 0 && (
         <div className="mt-5 border-l-2 border-amber-500 bg-amber-50 px-4 py-3">
-          <h4 className="text-sm font-semibold text-amber-900">Warnings</h4>
+          <h4 className="text-sm font-semibold text-amber-900">
+            Merge warnings
+          </h4>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-amber-800">
             {merged.merge_warnings.map((w, i) => (
               <li key={i}>{w}</li>
@@ -637,6 +1008,7 @@ function MergedResultCard({ merged }) {
         </div>
       )}
 
+      {/* Engineering checks */}
       {merged.rule_results?.length > 0 && (
         <div className="mt-8 border-t border-slate-200 pt-6">
           <h4 className="text-base font-semibold text-slate-900">
@@ -667,7 +1039,6 @@ function MergedResultCard({ merged }) {
                   </span>
                 </div>
 
-                {/* C1: Rebar Ratio */}
                 {rule.rule_id === "REBAR-RATIO-01" &&
                   rule.details?.ratio_percent !== undefined && (
                     <div className="mt-3 grid grid-cols-3 gap-px border border-slate-300 bg-slate-300 text-center">
@@ -686,7 +1057,6 @@ function MergedResultCard({ merged }) {
                     </div>
                   )}
 
-                {/* C3: Tie Spacing */}
                 {rule.rule_id === "C3-TIE-SPACING" &&
                   rule.details?.allowed_limit_mm !== undefined && (
                     <div className="mt-3 space-y-px border border-slate-300 bg-slate-300">
@@ -719,7 +1089,6 @@ function MergedResultCard({ merged }) {
                     </div>
                   )}
 
-                {/* C7: Clear Spacing */}
                 {rule.rule_id === "C7-CLEAR-SPACING" &&
                   rule.details?.estimated_clear_spacing_mm !== undefined && (
                     <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
@@ -731,7 +1100,7 @@ function MergedResultCard({ merged }) {
                           {rule.details.required_min_mm} mm
                         </span>
                       </div>
-                      <div className="text-center border-l border-slate-200">
+                      <div className="border-l border-slate-200 text-center">
                         <span className="block text-slate-400">
                           Estimated Actual
                         </span>
@@ -742,7 +1111,6 @@ function MergedResultCard({ merged }) {
                     </div>
                   )}
 
-                {/* C8: Lateral Support */}
                 {rule.rule_id === "C8-LATERAL-SUPPORT" &&
                   rule.details?.average_spacing_mm !== undefined && (
                     <div className="mt-3 grid grid-cols-2 gap-2 rounded border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">
@@ -754,7 +1122,7 @@ function MergedResultCard({ merged }) {
                           {rule.details.allowed_limit_mm} mm
                         </span>
                       </div>
-                      <div className="text-center border-l border-slate-200">
+                      <div className="border-l border-slate-200 text-center">
                         <span className="block text-slate-400">
                           Average Perimeter Spacing
                         </span>
@@ -770,6 +1138,7 @@ function MergedResultCard({ merged }) {
         </div>
       )}
 
+      {/* Provenance */}
       <details className="mt-6">
         <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-900">
           Provenance per field
@@ -778,6 +1147,18 @@ function MergedResultCard({ merged }) {
           {JSON.stringify(merged.field_provenance, null, 2)}
         </pre>
       </details>
+
+      {/* Manual override history */}
+      {Object.keys(merged.manual_overrides || {}).length > 0 && (
+        <details className="mt-4">
+          <summary className="cursor-pointer text-sm text-slate-600 hover:text-slate-900">
+            Manual correction history
+          </summary>
+          <pre className="mt-2 max-h-72 overflow-auto rounded-sm border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+            {JSON.stringify(merged.manual_overrides, null, 2)}
+          </pre>
+        </details>
+      )}
     </section>
   );
 }
