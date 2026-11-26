@@ -588,6 +588,7 @@ function MergedResultCard({ merged, extraction, onMergedUpdate }) {
   const [draft, setDraft] = useState(() => createDraft(merged));
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft(createDraft(merged));
   }, [merged]);
 
